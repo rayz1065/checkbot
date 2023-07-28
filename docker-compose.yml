@@ -1,0 +1,35 @@
+version: '3'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PW}
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - bot-network
+
+  app:
+    build:
+      dockerfile: ./docker/app.dockerfile
+    restart: unless-stopped
+    volumes:
+      - node_modules:/usr/src/app/node_modules
+      - ./storage:/usr/src/app/storage
+    networks:
+      - bot-network
+    command: npm start
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:
+  node_modules:
+
+networks:
+  bot-network:

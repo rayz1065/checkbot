@@ -1,0 +1,30 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String
+}
+
+model User {
+  id               Int      @id @default(autoincrement())
+  telegram_chat_id Int      @unique
+  first_name       String
+  last_name        String?
+  username         String?
+  created_at       DateTime @default(now())
+  language         String?
+  invited_by_id    Int?
+  invited_by       User?    @relation("invites", fields: [invited_by_id], references: [id])
+  invited_users    User[]   @relation("invites")
+}
