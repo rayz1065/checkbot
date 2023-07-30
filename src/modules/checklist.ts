@@ -17,8 +17,9 @@ type CheckBoxLine =
     };
 
 export const checkListModule = new Composer<MyContext>();
+export const checkListChannelModule = new Composer<MyContext>();
 
-const checkedBoxes = ['✅', '☑️', '✔️', '- [x]', '-[x]', '[x]'];
+const checkedBoxes = ['✅', '☑', '☑️', '✔', '✔️', '- [x]', '-[x]', '[x]'];
 const uncheckedBoxes = ['- [ ]', '- []', '-[ ]', '-[]', '[]', '[ ]', '-'];
 
 function escapeRegExp(text: string) {
@@ -27,7 +28,7 @@ function escapeRegExp(text: string) {
 
 function isLineChecked(line: string) {
   for (const box of checkedBoxes) {
-    if (line.startsWith(box)) {
+    if (line.trimStart().startsWith(box)) {
       return box;
     }
   }
@@ -36,7 +37,7 @@ function isLineChecked(line: string) {
 
 function isLineUnchecked(line: string) {
   for (const box of uncheckedBoxes) {
-    if (line.startsWith(box)) {
+    if (line.trimStart().startsWith(box)) {
       return box;
     }
   }
@@ -73,7 +74,7 @@ function extractCheckboxes(messageText: string) {
 
     const usedCheckBox = (isChecked ? checkedBox : uncheckedBox)!;
     checkboxText = line.replace(
-      new RegExp(`^${escapeRegExp(usedCheckBox)}\\s*`),
+      new RegExp(`^\\s*${escapeRegExp(usedCheckBox)}\\s*`),
       ''
     );
 
@@ -90,6 +91,7 @@ function extractCheckboxes(messageText: string) {
     // This box is too hard to click
     uncheckedBoxStyle = uncheckedBoxes[0];
   }
+
   return { hasCheckBoxes, resultingLines, checkedBoxStyle, uncheckedBoxStyle };
 }
 
@@ -187,7 +189,7 @@ async function sendChecklist(
   );
 
   await ctx.api.editMessageText(
-    checklistMessage.chat.id,
+    checklistChatId,
     checklistMessageId,
     checklistText
   );
@@ -250,6 +252,36 @@ checkListModule
         resultingLines,
         checkedBoxStyle,
         uncheckedBoxStyle
+      );
+    }
+  );
+
+checkListChannelModule
+  .chatType('channel')
+  .on(['channel_post:text', 'edited_channel_post:text'])
+  .filter(
+    (ctx) => ctx.msg.text.indexOf('#check') !== -1,
+    async (ctx) => {
+      if (ctx.msg.via_bot?.id === ctx.me.id) {
+        // this should have been responded to in 'chosen inline result'
+        return;
+      }
+
+      const { checkedBoxStyle, resultingLines, uncheckedBoxStyle } =
+        extractCheckboxes(ctx.msg.text);
+      const checklistChatId = ctx.msg.chat.id;
+      const checklistMessageId = ctx.msg.message_id;
+      const checklistText = formatCheckBoxLines(
+        resultingLines,
+        checkedBoxStyle,
+        uncheckedBoxStyle,
+        checklistUrl(ctx, checklistChatId, checklistMessageId)
+      );
+
+      await ctx.api.editMessageText(
+        checklistChatId,
+        checklistMessageId,
+        checklistText
       );
     }
   );

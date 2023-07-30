@@ -1,5 +1,5 @@
 import * as dotenv from 'dotenv';
-import { Bot, Context, InlineKeyboard, session, SessionFlavor } from 'grammy';
+import { Bot, Context, session, SessionFlavor } from 'grammy';
 import { sequentialize } from 'grammy-middlewares';
 import { hydrateReply, parseMode, ParseModeFlavor } from '@grammyjs/parse-mode';
 import {
@@ -15,7 +15,7 @@ import { I18n, I18nFlavor } from '@grammyjs/i18n';
 import { emoji } from 'node-emoji';
 import path from 'path';
 import { PrismaAdapter } from '@grammyjs/storage-prisma';
-import { checkListModule } from './modules/checklist';
+import { checkListChannelModule, checkListModule } from './modules/checklist';
 
 dotenv.config();
 if (!process.env.BOT_TOKEN) {
@@ -71,6 +71,10 @@ bot.errorBoundary((err) => {
 });
 
 bot.use(i18n);
+
+// before authentication...
+bot.use(checkListChannelModule);
+
 bot.use(authenticate);
 
 // share bot
