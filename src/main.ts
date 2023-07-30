@@ -74,7 +74,7 @@ bot.use(i18n);
 bot.use(authenticate);
 
 // share bot
-bot.on('inline_query', async (ctx) => {
+bot.inlineQuery('share', async (ctx) => {
   // await ctx.answerInlineQuery(
   //   [
   //     {
