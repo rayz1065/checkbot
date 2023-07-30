@@ -28,3 +28,8 @@ model User {
   invited_by       User?    @relation("invites", fields: [invited_by_id], references: [id])
   invited_users    User[]   @relation("invites")
 }
+
+model InlineChecklistHash {
+  id   Int    @id @default(autoincrement())
+  hash String
+}

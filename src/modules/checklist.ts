@@ -1,7 +1,8 @@
 import { Composer, GrammyError } from 'grammy';
-import { MyContext } from '../main';
+import { MyContext, prisma } from '../main';
 import { escapeHtml, ik } from '../lib/utils';
 import { Message } from 'grammy/types';
+import crypto from 'crypto';
 
 type CheckBoxLine =
   | {
@@ -17,7 +18,7 @@ type CheckBoxLine =
 
 export const checkListModule = new Composer<MyContext>();
 
-const checkedBoxes = ['- [x]', '-[x]', '[x]', '✅', '☑️', '✔️'];
+const checkedBoxes = ['✅', '☑️', '✔️', '- [x]', '-[x]', '[x]'];
 const uncheckedBoxes = ['- [ ]', '- []', '-[ ]', '-[]', '[]', '[ ]', '-'];
 
 function escapeRegExp(text: string) {
@@ -85,6 +86,10 @@ function extractCheckboxes(messageText: string) {
 
   checkedBoxStyle = checkedBoxStyle ?? checkedBoxes[0];
   uncheckedBoxStyle = uncheckedBoxStyle ?? uncheckedBoxes[0];
+  if (uncheckedBoxStyle === '-') {
+    // This box is too hard to click
+    uncheckedBoxStyle = uncheckedBoxes[0];
+  }
   return { hasCheckBoxes, resultingLines, checkedBoxStyle, uncheckedBoxStyle };
 }
 
@@ -102,7 +107,8 @@ function formatCheckBoxLines(
     const itemText = line.isChecked
       ? `<s>${escapeHtml(line.text)}</s>`
       : escapeHtml(line.text);
-    return `<a href="${toggleUrl(idx)}">${checkBoxStyle}</a> ${itemText}`;
+    // Space is in URL to make it simpler to click
+    return `<a href="${toggleUrl(idx)}">${checkBoxStyle} </a>${itemText}`;
   });
   return resultingLines.join('\n');
 }
@@ -168,11 +174,11 @@ async function sendChecklist(
   const urlGenerator = ctx.inlineMessageId
     ? checklistInlineUrl(
         ctx,
-        checklistMessage.chat.id,
+        checklistChatId,
         checklistMessageId,
         ctx.inlineMessageId
       )
-    : checklistUrl(ctx, checklistMessage.chat.id, checklistMessageId);
+    : checklistUrl(ctx, checklistChatId, checklistMessageId);
   const checklistText = formatCheckBoxLines(
     lines,
     checkedBoxStyle,
@@ -303,6 +309,19 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
   );
 });
 
+function makeInlineMessageHash(
+  checklistChatId: number,
+  checklistMessageId: number,
+  inlineMessageId: string
+) {
+  const messageKey = `${checklistChatId}:${checklistMessageId}:${inlineMessageId}`;
+  return crypto
+    .createHash('sha256')
+    .update(messageKey, 'utf8')
+    .digest()
+    .toString('hex');
+}
+
 // deal with a chosen inline query
 checkListModule.on('chosen_inline_result').filter(
   (ctx) => ctx.chosenInlineResult.result_id === 'checklist',
@@ -314,14 +333,54 @@ checkListModule.on('chosen_inline_result').filter(
       return console.error('Failed to get inline message id', ctx);
     }
 
-    // TODO handle if user has not started bot
-
-    const { checklistText } = await sendChecklist(
-      ctx,
-      resultingLines,
-      checkedBoxStyle,
-      uncheckedBoxStyle
+    let checklistChatId: number;
+    let checklistMessageId: number;
+    let checklistText: string;
+    try {
+      const res = await sendChecklist(
+        ctx,
+        resultingLines,
+        checkedBoxStyle,
+        uncheckedBoxStyle
+      );
+      checklistText = res.checklistText;
+      checklistChatId = res.checklistChatId;
+      checklistMessageId = res.checklistMessageId;
+    } catch (error) {
+      // NOTE: this assumes the error is due to the user not starting the bot.
+      // Better error handling can eventually be implemented.
+      checklistText = escapeHtml(
+        formatCheckBoxLinesNoHtml(
+          resultingLines,
+          checkedBoxStyle,
+          uncheckedBoxStyle
+        )
+      );
+      return await ctx.api.editMessageTextInline(
+        inlineMessageId,
+        'You must start the bot for it to work!\n' +
+          '<i>📋 Use the text below to recreate your checklist</i>:\n\n' +
+          `<code>${escapeHtml(checklistText)}</code>`,
+        ik([
+          [
+            {
+              text: '🤖 Click here to start the bot',
+              url: `https://t.me/${ctx.me.username}`,
+            },
+          ],
+        ])
+      );
+    }
+    // create a new hash, to check if the user has access to the inline message
+    const inlineHash = makeInlineMessageHash(
+      checklistChatId,
+      checklistMessageId,
+      inlineMessageId
     );
+    await prisma.inlineChecklistHash.create({
+      data: { hash: inlineHash },
+    });
+
     await ctx.api.editMessageTextInline(inlineMessageId, checklistText);
   }
 );
@@ -333,17 +392,19 @@ checkListModule
   .filter(
     (ctx) => ctx.match.startsWith('t_'),
     async (ctx) => {
-      const splits = ctx.match.split('_');
+      const splits = ctx.match.match(
+        /^t_([ci])_(-?\d+)_(\d+)_(\d+)(?:_(.+))?$/
+      );
       let checklistChatId = NaN;
       let checklistMessageId = NaN;
       let checkBoxIdx = NaN;
       let inlineMessageId: string | undefined = undefined;
 
-      if (splits.length === 5 && splits[1] === 'c') {
+      if (splits && splits[1] === 'c') {
         checklistChatId = parseInt(splits[2], 10);
         checklistMessageId = parseInt(splits[3], 10);
         checkBoxIdx = parseInt(splits[4], 10);
-      } else if (splits.length === 6 && splits[1] === 'i') {
+      } else if (splits && splits[1] === 'i') {
         checklistChatId = parseInt(splits[2], 10);
         checklistMessageId = parseInt(splits[3], 10);
         checkBoxIdx = parseInt(splits[4], 10);
@@ -353,13 +414,13 @@ checkListModule
         isNaN(checklistChatId) ||
         isNaN(checklistMessageId) ||
         isNaN(checkBoxIdx) ||
-        (checklistChatId > 0 && checklistChatId !== ctx.from.id) ||
         checkBoxIdx < 0
       ) {
         return await ctx.reply('Error parsing command...');
       }
 
-      if (checklistChatId !== ctx.from.id) {
+      if (checklistChatId < 0 && checklistChatId !== ctx.from.id) {
+        // This is a group chat, check if the user is in the group
         let chatMemberStatus: string;
         try {
           const chatMember = await ctx.api.getChatMember(
@@ -380,6 +441,29 @@ checkListModule
           return await ctx.reply(
             `You do not have the rights to edit this checklist (maybe you're an anonymous admin, ` +
               `maybe the bot has no access to the members of the chat, make the bot administrator to fix this)`
+          );
+        }
+      } else if (checklistChatId !== ctx.from.id) {
+        // If this is an inline message we need to check the hash
+        if (!inlineMessageId) {
+          return await ctx.reply(
+            'You do not have the rights to edit this checklist'
+          );
+        }
+        const checklistHash = makeInlineMessageHash(
+          checklistChatId,
+          checklistMessageId,
+          inlineMessageId
+        );
+        // If the hash is found in the database, the user is trusted to have access
+        // to the inline message id and the rest of the code runs as normal
+        const dbHash = await prisma.inlineChecklistHash.findFirst({
+          where: { hash: checklistHash },
+        });
+        if (!dbHash) {
+          // Checklist hash not found, this checklist probably does not exist
+          return await ctx.reply(
+            'You do not have the rights to edit this checklist'
           );
         }
       }
@@ -435,11 +519,11 @@ checkListModule
       const urlGenerator = inlineMessageId
         ? checklistInlineUrl(
             ctx,
-            checklistMessage.chat.id,
+            checklistChatId,
             checklistMessageId,
             inlineMessageId
           )
-        : checklistUrl(ctx, checklistMessage.chat.id, checklistMessageId);
+        : checklistUrl(ctx, checklistChatId, checklistMessageId);
       const checklistText = formatCheckBoxLines(
         resultingLines,
         checkedBoxStyle,
