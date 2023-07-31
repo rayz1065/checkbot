@@ -110,6 +110,11 @@ export function tgCallbackMiddleware(callbacks: TgCallback<any>[]) {
   };
 }
 
+/**
+ * An error to be displayed to the user
+ */
+export class TgError extends Error {}
+
 export function makeId(length: number) {
   const res = [];
   const chars =

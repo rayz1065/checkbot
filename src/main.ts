@@ -141,10 +141,6 @@ bot.command('start', async (ctx) => {
   await ctx.reply('👋 Hello');
 });
 
-bot.on('message:text', (ctx) => {
-  console.log('No handler found for message', ctx.message.text);
-});
-
 bot.catch((error) => {
   if (error.message.indexOf('message is not modified:') !== -1) {
     return;

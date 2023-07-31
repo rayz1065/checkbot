@@ -1,8 +1,9 @@
 import { Composer, GrammyError } from 'grammy';
 import { MyContext, prisma } from '../main';
-import { escapeHtml, ik } from '../lib/utils';
+import { TgError, escapeHtml, ik } from '../lib/utils';
 import { Message } from 'grammy/types';
 import crypto from 'crypto';
+import assert from 'assert';
 
 type CheckBoxLine =
   | {
@@ -16,35 +17,58 @@ type CheckBoxLine =
       text: string;
     };
 
+interface ChecklistData {
+  hasCheckBoxes: boolean;
+  lines: CheckBoxLine[];
+  checkedBoxStyle: string;
+  uncheckedBoxStyle: string;
+}
+
 export const checkListModule = new Composer<MyContext>();
 export const checkListChannelModule = new Composer<MyContext>();
 
-const checkedBoxes = ['✅', '☑', '☑️', '✔', '✔️', '- [x]', '-[x]', '[x]'];
-const uncheckedBoxes = ['- [ ]', '- []', '-[ ]', '-[]', '[]', '[ ]', '-'];
+const checkedBoxes = ['✅', '☑️', '✔️', '- [x]', '☑', '✔'];
+const uncheckedBoxes = ['- [ ]'];
 
 function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
 function isLineChecked(line: string) {
+  const match = line.match(/^\s*(-\s*\[\s*x\s*\])\s*/);
+  if (match) {
+    return {
+      matched: match[1],
+      normalized: '- [x]',
+    };
+  }
+
   for (const box of checkedBoxes) {
     if (line.trimStart().startsWith(box)) {
-      return box;
+      return {
+        matched: box,
+        normalized: box,
+      };
     }
   }
   return null;
 }
 
 function isLineUnchecked(line: string) {
-  for (const box of uncheckedBoxes) {
-    if (line.trimStart().startsWith(box)) {
-      return box;
-    }
+  // if a match is found, it is normalized to make it have between 1 and 3 spaces
+  const match = line.match(/^\s*(-?\s*\[(\s*)\]|-)\s*/);
+  if (!match) {
+    return null;
   }
-  return null;
+  const spacesCount = Math.max(1, Math.min(3, match[2]?.length ?? 0));
+  const normalized = '- [' + ' '.repeat(spacesCount) + ']';
+  return {
+    matched: match[1],
+    normalized,
+  };
 }
 
-function extractCheckboxes(messageText: string) {
+function extractCheckboxes(messageText: string): ChecklistData {
   const lines = messageText.split('\n');
   let hasCheckBoxes = false;
   let checkedBoxStyle: string | null = null;
@@ -67,14 +91,14 @@ function extractCheckboxes(messageText: string) {
     const isChecked = checkedBox !== null;
 
     if (isChecked) {
-      checkedBoxStyle = checkedBoxStyle ?? checkedBox;
+      checkedBoxStyle = checkedBoxStyle ?? checkedBox.normalized;
     } else {
-      uncheckedBoxStyle = uncheckedBoxStyle ?? uncheckedBox;
+      uncheckedBoxStyle = uncheckedBoxStyle ?? uncheckedBox!.normalized;
     }
 
     const usedCheckBox = (isChecked ? checkedBox : uncheckedBox)!;
     checkboxText = line.replace(
-      new RegExp(`^\\s*${escapeRegExp(usedCheckBox)}\\s*`),
+      new RegExp(`^\\s*${escapeRegExp(usedCheckBox.matched)}\\s*`),
       ''
     );
 
@@ -92,15 +116,19 @@ function extractCheckboxes(messageText: string) {
     uncheckedBoxStyle = uncheckedBoxes[0];
   }
 
-  return { hasCheckBoxes, resultingLines, checkedBoxStyle, uncheckedBoxStyle };
+  return {
+    hasCheckBoxes,
+    lines: resultingLines,
+    checkedBoxStyle,
+    uncheckedBoxStyle,
+  };
 }
 
 function formatCheckBoxLines(
-  lines: CheckBoxLine[],
-  checkedBoxStyle: string,
-  uncheckedBoxStyle: string,
+  checklistData: ChecklistData,
   toggleUrl: (idx: number) => string
 ) {
+  const { lines, checkedBoxStyle, uncheckedBoxStyle } = checklistData;
   const resultingLines = lines.map((line, idx) => {
     if (!line.hasCheckBox) {
       return escapeHtml(line.text);
@@ -115,11 +143,8 @@ function formatCheckBoxLines(
   return resultingLines.join('\n');
 }
 
-function formatCheckBoxLinesNoHtml(
-  lines: CheckBoxLine[],
-  checkedBoxStyle: string,
-  uncheckedBoxStyle: string
-) {
+function formatCheckBoxLinesNoHtml(checklistData: ChecklistData) {
+  const { lines, checkedBoxStyle, uncheckedBoxStyle } = checklistData;
   const resultingLines = lines.map((line) => {
     if (!line.hasCheckBox) {
       return line.text;
@@ -150,16 +175,12 @@ function checklistInlineUrl(
     `https://t.me/${ctx.me.username}?start=t_i_${checklistChatId}_${checklistMessageId}_${idx}_${inlineMessageId}`;
 }
 
-async function sendChecklist(
-  ctx: MyContext,
-  lines: CheckBoxLine[],
-  checkedBoxStyle: string,
-  uncheckedBoxStyle: string
-) {
+/**
+ * Used in private chats, groups, and inline mode
+ */
+async function sendChecklist(ctx: MyContext, checklistData: ChecklistData) {
   const normalizedText = formatCheckBoxLines(
-    lines,
-    checkedBoxStyle,
-    uncheckedBoxStyle,
+    checklistData,
     () => '' // no URL is available yet
   );
   const checklistChatId = ctx.chat?.id ?? ctx.from?.id;
@@ -181,12 +202,7 @@ async function sendChecklist(
         ctx.inlineMessageId
       )
     : checklistUrl(ctx, checklistChatId, checklistMessageId);
-  const checklistText = formatCheckBoxLines(
-    lines,
-    checkedBoxStyle,
-    uncheckedBoxStyle,
-    urlGenerator
-  );
+  const checklistText = formatCheckBoxLines(checklistData, urlGenerator);
 
   await ctx.api.editMessageText(
     checklistChatId,
@@ -197,6 +213,28 @@ async function sendChecklist(
   return { checklistChatId, checklistMessageId, checklistText };
 }
 
+/**
+ * checks whether the received messages requires the bot to send a checklist
+ */
+async function checkMessageSendChecklist(
+  ctx: MyContext & { message: Message }
+) {
+  if (ctx.message.via_bot?.id === ctx.me.id) {
+    // this should have been responded to in 'chosen inline result'
+    return false;
+  }
+  if (ctx.message.has_protected_content) {
+    // TODO, this can work for non-secret admins when messages are protected
+    await ctx.reply(
+      'This bot does not work in a group with protected content, ' +
+        'use inline mode instead'
+      // 'when used by an anonymous admin'
+    );
+    return false;
+  }
+  return true;
+}
+
 // private messages with checkboxes
 checkListModule
   .chatType('private')
@@ -205,19 +243,11 @@ checkListModule
     // Only handle this message if it has checkboxes
     (ctx) => extractCheckboxes(ctx.message.text).hasCheckBoxes,
     async (ctx) => {
-      if (ctx.message.via_bot?.id === ctx.me.id) {
-        // this should have been responded to in 'chosen inline result'
+      if (!(await checkMessageSendChecklist(ctx))) {
         return;
       }
-      const { resultingLines, checkedBoxStyle, uncheckedBoxStyle } =
-        extractCheckboxes(ctx.message.text);
-
-      await sendChecklist(
-        ctx,
-        resultingLines,
-        checkedBoxStyle,
-        uncheckedBoxStyle
-      );
+      const checklistData = extractCheckboxes(ctx.message.text);
+      await sendChecklist(ctx, checklistData);
     }
   );
 
@@ -225,15 +255,11 @@ checkListModule
 checkListModule
   .chatType(['group', 'supergroup', 'private'])
   .command('check', async (ctx) => {
-    const { resultingLines, checkedBoxStyle, uncheckedBoxStyle } =
-      extractCheckboxes(ctx.match);
-
-    await sendChecklist(
-      ctx,
-      resultingLines,
-      checkedBoxStyle,
-      uncheckedBoxStyle
-    );
+    if (!(await checkMessageSendChecklist(ctx))) {
+      return;
+    }
+    const checklistData = extractCheckboxes(ctx.match);
+    await sendChecklist(ctx, checklistData);
   });
 
 // message containing #check in a group
@@ -244,15 +270,11 @@ checkListModule
     // Only handle this message if it has a 'check' hashtag
     (ctx) => ctx.message.text.indexOf('#check') !== -1,
     async (ctx) => {
-      const { resultingLines, checkedBoxStyle, uncheckedBoxStyle } =
-        extractCheckboxes(ctx.message.text);
-
-      await sendChecklist(
-        ctx,
-        resultingLines,
-        checkedBoxStyle,
-        uncheckedBoxStyle
-      );
+      if (!(await checkMessageSendChecklist(ctx))) {
+        return;
+      }
+      const checklistData = extractCheckboxes(ctx.message.text);
+      await sendChecklist(ctx, checklistData);
     }
   );
 
@@ -267,14 +289,11 @@ checkListChannelModule
         return;
       }
 
-      const { checkedBoxStyle, resultingLines, uncheckedBoxStyle } =
-        extractCheckboxes(ctx.msg.text);
+      const checklistData = extractCheckboxes(ctx.msg.text);
       const checklistChatId = ctx.msg.chat.id;
       const checklistMessageId = ctx.msg.message_id;
       const checklistText = formatCheckBoxLines(
-        resultingLines,
-        checkedBoxStyle,
-        uncheckedBoxStyle,
+        checklistData,
         checklistUrl(ctx, checklistChatId, checklistMessageId)
       );
 
@@ -300,8 +319,7 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
   if (ctx.inlineQuery.query.length >= 250) {
     switchPmText = 'Warning, inline query is too long!';
   }
-  const { checkedBoxStyle, resultingLines, uncheckedBoxStyle } =
-    getInlineQueryCheckBoxes(ctx.inlineQuery.query);
+  const checklistData = getInlineQueryCheckBoxes(ctx.inlineQuery.query);
 
   return await ctx.answerInlineQuery(
     [
@@ -309,12 +327,7 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
         id: 'checklist',
         type: 'article',
         input_message_content: {
-          message_text: formatCheckBoxLines(
-            resultingLines,
-            checkedBoxStyle,
-            uncheckedBoxStyle,
-            () => ''
-          ),
+          message_text: formatCheckBoxLines(checklistData, () => ''),
           parse_mode: 'HTML',
         },
         ...ik([
@@ -326,11 +339,7 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
           ],
         ]),
         title: 'Send checklist',
-        description: formatCheckBoxLinesNoHtml(
-          resultingLines,
-          checkedBoxStyle,
-          uncheckedBoxStyle
-        ),
+        description: formatCheckBoxLinesNoHtml(checklistData),
       },
     ],
     {
@@ -358,8 +367,9 @@ function makeInlineMessageHash(
 checkListModule.on('chosen_inline_result').filter(
   (ctx) => ctx.chosenInlineResult.result_id === 'checklist',
   async (ctx) => {
-    const { checkedBoxStyle, resultingLines, uncheckedBoxStyle } =
-      getInlineQueryCheckBoxes(ctx.chosenInlineResult.query);
+    const checklistData = getInlineQueryCheckBoxes(
+      ctx.chosenInlineResult.query
+    );
     const inlineMessageId = ctx.chosenInlineResult.inline_message_id;
     if (!inlineMessageId) {
       return console.error('Failed to get inline message id', ctx);
@@ -369,25 +379,14 @@ checkListModule.on('chosen_inline_result').filter(
     let checklistMessageId: number;
     let checklistText: string;
     try {
-      const res = await sendChecklist(
-        ctx,
-        resultingLines,
-        checkedBoxStyle,
-        uncheckedBoxStyle
-      );
+      const res = await sendChecklist(ctx, checklistData);
       checklistText = res.checklistText;
       checklistChatId = res.checklistChatId;
       checklistMessageId = res.checklistMessageId;
     } catch (error) {
       // NOTE: this assumes the error is due to the user not starting the bot.
       // Better error handling can eventually be implemented.
-      checklistText = escapeHtml(
-        formatCheckBoxLinesNoHtml(
-          resultingLines,
-          checkedBoxStyle,
-          uncheckedBoxStyle
-        )
-      );
+      checklistText = escapeHtml(formatCheckBoxLinesNoHtml(checklistData));
       return await ctx.api.editMessageTextInline(
         inlineMessageId,
         'You must start the bot for it to work!\n' +
@@ -416,6 +415,68 @@ checkListModule.on('chosen_inline_result').filter(
     await ctx.api.editMessageTextInline(inlineMessageId, checklistText);
   }
 );
+
+async function checkChecklistPermissions(
+  ctx: MyContext,
+  checklistChatId: number,
+  checklistMessageId: number,
+  inlineMessageId: string | undefined
+) {
+  assert(ctx.from);
+  if (checklistChatId < 0 && checklistChatId !== ctx.from.id) {
+    // This is a group or channel chat, check if the user is in the chat
+    let chatMemberStatus: string;
+    try {
+      const chatMember = await ctx.api.getChatMember(
+        checklistChatId,
+        ctx.from.id
+      );
+      chatMemberStatus = chatMember.status;
+    } catch (error) {
+      // ignore errors to avoid giving information to a malicious user
+      chatMemberStatus = 'restricted';
+    }
+    // NOTE: this will not work if the chat list is hidden from the user
+    // or if the user is an anonymous admin.
+    // Putting the bot admin will fix this.
+    // #TODO: make list of allowed statuses configurable
+    const allowedStatuses = ['creator', 'administrator', 'member'];
+    if (allowedStatuses.indexOf(chatMemberStatus) === -1) {
+      throw new TgError(
+        `You do not have the rights to edit this checklist (maybe you're an anonymous admin, ` +
+          `maybe the bot has no access to the members of the chat, make the bot administrator to fix this)`
+      );
+    }
+
+    if (chatMemberStatus === 'member') {
+      const chatType = (await ctx.api.getChat(checklistChatId)).type;
+      if (chatType === 'channel') {
+        throw new TgError(
+          'You are not administrator in this channel and cannot edit the checklist'
+        );
+      }
+    }
+  } else if (checklistChatId !== ctx.from.id) {
+    // If this is an inline message we need to check the hash
+    if (!inlineMessageId) {
+      throw new TgError('You do not have the rights to edit this checklist');
+    }
+    const checklistHash = makeInlineMessageHash(
+      checklistChatId,
+      checklistMessageId,
+      inlineMessageId
+    );
+    // If the hash is found in the database, the user is trusted to have access
+    // to the inline message id and the rest of the code runs as normal
+    const dbHash = await prisma.inlineChecklistHash.findFirst({
+      where: { hash: checklistHash },
+    });
+    if (!dbHash) {
+      // Checklist hash not found, this checklist probably does not exist
+      throw new TgError('You do not have the rights to edit this checklist');
+    }
+  }
+}
 
 // update a checklist
 checkListModule
@@ -451,53 +512,19 @@ checkListModule
         return await ctx.reply('Error parsing command...');
       }
 
-      if (checklistChatId < 0 && checklistChatId !== ctx.from.id) {
-        // This is a group chat, check if the user is in the group
-        let chatMemberStatus: string;
-        try {
-          const chatMember = await ctx.api.getChatMember(
-            checklistChatId,
-            ctx.from.id
-          );
-          chatMemberStatus = chatMember.status;
-        } catch (error) {
-          // ignore errors to avoid giving information to a malicious user
-          chatMemberStatus = 'restricted';
-        }
-        // NOTE: this will not work if the chat list is hidden from the user
-        // or if the user is an anonymous admin.
-        // Putting the bot admin will fix this.
-        // #TODO: make list of allowed statuses configurable
-        const allowedStatuses = ['creator', 'administrator', 'member'];
-        if (allowedStatuses.indexOf(chatMemberStatus) === -1) {
-          return await ctx.reply(
-            `You do not have the rights to edit this checklist (maybe you're an anonymous admin, ` +
-              `maybe the bot has no access to the members of the chat, make the bot administrator to fix this)`
-          );
-        }
-      } else if (checklistChatId !== ctx.from.id) {
-        // If this is an inline message we need to check the hash
-        if (!inlineMessageId) {
-          return await ctx.reply(
-            'You do not have the rights to edit this checklist'
-          );
-        }
-        const checklistHash = makeInlineMessageHash(
+      try {
+        await checkChecklistPermissions(
+          ctx,
           checklistChatId,
           checklistMessageId,
           inlineMessageId
         );
-        // If the hash is found in the database, the user is trusted to have access
-        // to the inline message id and the rest of the code runs as normal
-        const dbHash = await prisma.inlineChecklistHash.findFirst({
-          where: { hash: checklistHash },
-        });
-        if (!dbHash) {
-          // Checklist hash not found, this checklist probably does not exist
-          return await ctx.reply(
-            'You do not have the rights to edit this checklist'
-          );
-        }
+      } catch (error) {
+        const prettyError =
+          error instanceof TgError
+            ? error.message
+            : 'There was an error while checking the permissions';
+        return await ctx.reply(prettyError);
       }
 
       // get contents of the checklist
@@ -534,18 +561,14 @@ checkListModule
       };
 
       // parse and update checklist
-      const { checkedBoxStyle, resultingLines, uncheckedBoxStyle } =
-        extractCheckboxes(checklistMessage.text);
-      if (
-        resultingLines.length <= checkBoxIdx ||
-        !resultingLines[checkBoxIdx].hasCheckBox
-      ) {
+      const checklistData = extractCheckboxes(checklistMessage.text);
+      const { lines } = checklistData;
+      if (lines.length <= checkBoxIdx || !lines[checkBoxIdx].hasCheckBox) {
         await ctx.reply('Invalid checkbox idx');
         return await cleanTemporaryMessage();
       }
 
-      resultingLines[checkBoxIdx].isChecked =
-        !resultingLines[checkBoxIdx].isChecked;
+      lines[checkBoxIdx].isChecked = !lines[checkBoxIdx].isChecked;
 
       // send the new checklist
       const urlGenerator = inlineMessageId
@@ -556,12 +579,7 @@ checkListModule
             inlineMessageId
           )
         : checklistUrl(ctx, checklistChatId, checklistMessageId);
-      const checklistText = formatCheckBoxLines(
-        resultingLines,
-        checkedBoxStyle,
-        uncheckedBoxStyle,
-        urlGenerator
-      );
+      const checklistText = formatCheckBoxLines(checklistData, urlGenerator);
       await ctx.api.editMessageText(
         checklistChatId,
         checklistMessageId,
