@@ -1,7 +1,7 @@
 import { Composer, GrammyError } from 'grammy';
 import { MyContext, prisma } from '../main';
 import { TgError, escapeHtml, ik } from '../lib/utils';
-import { Message } from 'grammy/types';
+import { Chat, Message } from 'grammy/types';
 import crypto from 'crypto';
 import assert from 'assert';
 
@@ -24,6 +24,14 @@ interface ChecklistData {
   uncheckedBoxStyle: string;
 }
 
+interface ChecklistMessageLocation {
+  sourceChatId: number;
+  sourceMessageId: number;
+  foreignChatId?: number;
+  foreignMessageId?: number;
+  inlineMessageId?: string;
+}
+
 export const checkListModule = new Composer<MyContext>();
 export const checkListChannelModule = new Composer<MyContext>();
 
@@ -35,7 +43,7 @@ function escapeRegExp(text: string) {
 }
 
 function isLineChecked(line: string) {
-  const match = line.match(/^\s*(-\s*\[\s*x\s*\])\s*/);
+  const match = line.match(/^\s*(-?\s*\[\s*x\s*\])\s*/);
   if (match) {
     return {
       matched: match[1],
@@ -156,84 +164,129 @@ function formatCheckBoxLinesNoHtml(checklistData: ChecklistData) {
   return resultingLines.join('\n');
 }
 
-function checklistUrl(
-  ctx: MyContext,
-  checklistChatId: number,
-  checklistMessageId: number
-) {
-  return (idx: number) =>
-    `https://t.me/${ctx.me.username}?start=t_c_${checklistChatId}_${checklistMessageId}_${idx}`;
-}
+function checklistUrl(ctx: MyContext, location: ChecklistMessageLocation) {
+  const {
+    sourceChatId,
+    sourceMessageId,
+    inlineMessageId,
+    foreignChatId,
+    foreignMessageId,
+  } = location;
 
-function checklistInlineUrl(
-  ctx: MyContext,
-  checklistChatId: number,
-  checklistMessageId: number,
-  inlineMessageId: string
-) {
+  if (inlineMessageId) {
+    return (idx: number) =>
+      `https://t.me/${ctx.me.username}?start=t_i_${sourceChatId}_${sourceMessageId}_${idx}_${inlineMessageId}`;
+  }
+
+  if (foreignChatId) {
+    return (idx: number) =>
+      `https://t.me/${ctx.me.username}?start=t_f_${sourceChatId}_${sourceMessageId}_${idx}_${foreignChatId}_${foreignMessageId}`;
+  }
+
   return (idx: number) =>
-    `https://t.me/${ctx.me.username}?start=t_i_${checklistChatId}_${checklistMessageId}_${idx}_${inlineMessageId}`;
+    `https://t.me/${ctx.me.username}?start=t_c_${sourceChatId}_${sourceMessageId}_${idx}`;
 }
 
 /**
  * Used in private chats, groups, and inline mode
  */
-async function sendChecklist(ctx: MyContext, checklistData: ChecklistData) {
+async function sendChecklist(
+  ctx: MyContext,
+  checklistData: ChecklistData,
+  location: Omit<ChecklistMessageLocation, 'sourceMessageId'>
+) {
   const normalizedText = formatCheckBoxLines(
     checklistData,
     () => '' // no URL is available yet
   );
-  const checklistChatId = ctx.chat?.id ?? ctx.from?.id;
-  if (!checklistChatId) {
-    throw new Error('Failed to select a chat to send the message');
-  }
+  const { sourceChatId, foreignChatId } = location;
   const checklistMessage = await ctx.api.sendMessage(
-    checklistChatId,
+    sourceChatId,
     normalizedText
   );
-  const checklistMessageId = checklistMessage.message_id;
+  const sourceMessageId = checklistMessage.message_id;
+  const completeLocation: ChecklistMessageLocation = {
+    ...location,
+    sourceMessageId,
+  };
+
+  if (foreignChatId) {
+    // get a foreignMessageId
+    const foreignChecklistMessage = await ctx.api.sendMessage(
+      foreignChatId,
+      normalizedText
+    );
+    completeLocation.foreignMessageId = foreignChecklistMessage.message_id;
+  }
 
   // edit the message now that the URL is available
-  const urlGenerator = ctx.inlineMessageId
-    ? checklistInlineUrl(
-        ctx,
-        checklistChatId,
-        checklistMessageId,
-        ctx.inlineMessageId
-      )
-    : checklistUrl(ctx, checklistChatId, checklistMessageId);
+  const urlGenerator = checklistUrl(ctx, completeLocation);
   const checklistText = formatCheckBoxLines(checklistData, urlGenerator);
 
-  await ctx.api.editMessageText(
-    checklistChatId,
-    checklistMessageId,
-    checklistText
-  );
+  await ctx.api.editMessageText(sourceChatId, sourceMessageId, checklistText);
 
-  return { checklistChatId, checklistMessageId, checklistText };
+  if (foreignChatId && completeLocation.foreignMessageId) {
+    await ctx.api.editMessageText(
+      foreignChatId,
+      completeLocation.foreignMessageId,
+      checklistText
+    );
+  }
+
+  return { completeLocation, checklistText };
 }
 
-/**
- * checks whether the received messages requires the bot to send a checklist
- */
-async function checkMessageSendChecklist(
-  ctx: MyContext & { message: Message }
-) {
+const replyWithChecklist = async (
+  ctx: MyContext & { message: Message } & { chat: Chat },
+  checklistText: string
+) => {
   if (ctx.message.via_bot?.id === ctx.me.id) {
     // this should have been responded to in 'chosen inline result'
-    return false;
+    return;
   }
+  const location: Omit<ChecklistMessageLocation, 'sourceMessageId'> = {
+    sourceChatId: ctx.chat.id,
+  };
   if (ctx.message.has_protected_content) {
-    // TODO, this can work for non-secret admins when messages are protected
-    await ctx.reply(
-      'This bot does not work in a group with protected content, ' +
-        'use inline mode instead'
-      // 'when used by an anonymous admin'
-    );
-    return false;
+    if (ctx.message.from.id < 0) {
+      return await ctx.reply(
+        'This bot does not work in a group with protected content ' +
+          'when used by an anonymous admin, use inline mode instead'
+      );
+    }
+    location.foreignChatId = ctx.chat.id;
+    location.sourceChatId = ctx.message.from.id;
   }
-  return true;
-}
+
+  const checklistData = extractCheckboxes(checklistText);
+  try {
+    await sendChecklist(ctx, checklistData, location);
+  } catch (error) {
+    if (
+      location.foreignChatId &&
+      error instanceof GrammyError &&
+      error.error_code == 403
+    ) {
+      const checklistText = formatCheckBoxLinesNoHtml(checklistData);
+      return await ctx.api.sendMessage(
+        location.foreignChatId,
+        'You must start the bot for it to work in a group with protected content!\n' +
+          '<i>📋 Use the text below to recreate your checklist</i>:\n\n' +
+          `<code>${escapeHtml(checklistText)}</code>`,
+        ik([
+          [
+            {
+              text: '🤖 Click here to start the bot',
+              url: `https://t.me/${ctx.me.username}`,
+            },
+          ],
+        ])
+      );
+    }
+
+    return await ctx.reply('There was an error creating the checklist');
+  }
+};
 
 // private messages with checkboxes
 checkListModule
@@ -242,25 +295,13 @@ checkListModule
   .filter(
     // Only handle this message if it has checkboxes
     (ctx) => extractCheckboxes(ctx.message.text).hasCheckBoxes,
-    async (ctx) => {
-      if (!(await checkMessageSendChecklist(ctx))) {
-        return;
-      }
-      const checklistData = extractCheckboxes(ctx.message.text);
-      await sendChecklist(ctx, checklistData);
-    }
+    (ctx) => replyWithChecklist(ctx, ctx.message.text)
   );
 
 // 'check' command
 checkListModule
   .chatType(['group', 'supergroup', 'private'])
-  .command('check', async (ctx) => {
-    if (!(await checkMessageSendChecklist(ctx))) {
-      return;
-    }
-    const checklistData = extractCheckboxes(ctx.match);
-    await sendChecklist(ctx, checklistData);
-  });
+  .command('check', (ctx) => replyWithChecklist(ctx, ctx.match));
 
 // message containing #check in a group
 checkListModule
@@ -269,13 +310,7 @@ checkListModule
   .filter(
     // Only handle this message if it has a 'check' hashtag
     (ctx) => ctx.message.text.indexOf('#check') !== -1,
-    async (ctx) => {
-      if (!(await checkMessageSendChecklist(ctx))) {
-        return;
-      }
-      const checklistData = extractCheckboxes(ctx.message.text);
-      await sendChecklist(ctx, checklistData);
-    }
+    (ctx) => replyWithChecklist(ctx, ctx.message.text)
   );
 
 checkListChannelModule
@@ -290,16 +325,18 @@ checkListChannelModule
       }
 
       const checklistData = extractCheckboxes(ctx.msg.text);
-      const checklistChatId = ctx.msg.chat.id;
-      const checklistMessageId = ctx.msg.message_id;
+      const location: ChecklistMessageLocation = {
+        sourceChatId: ctx.msg.chat.id,
+        sourceMessageId: ctx.msg.message_id,
+      };
       const checklistText = formatCheckBoxLines(
         checklistData,
-        checklistUrl(ctx, checklistChatId, checklistMessageId)
+        checklistUrl(ctx, location)
       );
 
       await ctx.api.editMessageText(
-        checklistChatId,
-        checklistMessageId,
+        location.sourceChatId,
+        location.sourceMessageId,
         checklistText
       );
     }
@@ -350,12 +387,9 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
   );
 });
 
-function makeInlineMessageHash(
-  checklistChatId: number,
-  checklistMessageId: number,
-  inlineMessageId: string
-) {
-  const messageKey = `${checklistChatId}:${checklistMessageId}:${inlineMessageId}`;
+function makeInlineMessageHash(location: ChecklistMessageLocation) {
+  const { sourceChatId, sourceMessageId, inlineMessageId } = location;
+  const messageKey = `${sourceChatId}:${sourceMessageId}:${inlineMessageId}`;
   return crypto
     .createHash('sha256')
     .update(messageKey, 'utf8')
@@ -375,39 +409,41 @@ checkListModule.on('chosen_inline_result').filter(
       return console.error('Failed to get inline message id', ctx);
     }
 
-    let checklistChatId: number;
-    let checklistMessageId: number;
+    let location: ChecklistMessageLocation;
     let checklistText: string;
     try {
-      const res = await sendChecklist(ctx, checklistData);
+      const res = await sendChecklist(ctx, checklistData, {
+        sourceChatId: ctx.from.id,
+        inlineMessageId: inlineMessageId,
+      });
+      location = res.completeLocation;
       checklistText = res.checklistText;
-      checklistChatId = res.checklistChatId;
-      checklistMessageId = res.checklistMessageId;
     } catch (error) {
-      // NOTE: this assumes the error is due to the user not starting the bot.
-      // Better error handling can eventually be implemented.
-      checklistText = escapeHtml(formatCheckBoxLinesNoHtml(checklistData));
+      if (error instanceof GrammyError && error.error_code == 403) {
+        checklistText = formatCheckBoxLinesNoHtml(checklistData);
+        return await ctx.api.editMessageTextInline(
+          inlineMessageId,
+          'You must start the bot for it to work!\n' +
+            '<i>📋 Use the text below to recreate your checklist</i>:\n\n' +
+            `<code>${escapeHtml(checklistText)}</code>`,
+          ik([
+            [
+              {
+                text: '🤖 Click here to start the bot',
+                url: `https://t.me/${ctx.me.username}`,
+              },
+            ],
+          ])
+        );
+      }
       return await ctx.api.editMessageTextInline(
         inlineMessageId,
-        'You must start the bot for it to work!\n' +
-          '<i>📋 Use the text below to recreate your checklist</i>:\n\n' +
-          `<code>${escapeHtml(checklistText)}</code>`,
-        ik([
-          [
-            {
-              text: '🤖 Click here to start the bot',
-              url: `https://t.me/${ctx.me.username}`,
-            },
-          ],
-        ])
+        'There was an error creating the checklist'
       );
     }
+
     // create a new hash, to check if the user has access to the inline message
-    const inlineHash = makeInlineMessageHash(
-      checklistChatId,
-      checklistMessageId,
-      inlineMessageId
-    );
+    const inlineHash = makeInlineMessageHash(location);
     await prisma.inlineChecklistHash.create({
       data: { hash: inlineHash },
     });
@@ -418,19 +454,16 @@ checkListModule.on('chosen_inline_result').filter(
 
 async function checkChecklistPermissions(
   ctx: MyContext,
-  checklistChatId: number,
-  checklistMessageId: number,
-  inlineMessageId: string | undefined
+  location: ChecklistMessageLocation
 ) {
+  const { sourceChatId, foreignChatId, inlineMessageId } = location;
   assert(ctx.from);
-  if (checklistChatId < 0 && checklistChatId !== ctx.from.id) {
+  const chatToCheck = foreignChatId ?? sourceChatId;
+  if (chatToCheck < 0 && chatToCheck !== ctx.from.id) {
     // This is a group or channel chat, check if the user is in the chat
     let chatMemberStatus: string;
     try {
-      const chatMember = await ctx.api.getChatMember(
-        checklistChatId,
-        ctx.from.id
-      );
+      const chatMember = await ctx.api.getChatMember(chatToCheck, ctx.from.id);
       chatMemberStatus = chatMember.status;
     } catch (error) {
       // ignore errors to avoid giving information to a malicious user
@@ -449,23 +482,19 @@ async function checkChecklistPermissions(
     }
 
     if (chatMemberStatus === 'member') {
-      const chatType = (await ctx.api.getChat(checklistChatId)).type;
+      const chatType = (await ctx.api.getChat(chatToCheck)).type;
       if (chatType === 'channel') {
         throw new TgError(
           'You are not administrator in this channel and cannot edit the checklist'
         );
       }
     }
-  } else if (checklistChatId !== ctx.from.id) {
+  } else if (chatToCheck !== ctx.from.id) {
     // If this is an inline message we need to check the hash
     if (!inlineMessageId) {
       throw new TgError('You do not have the rights to edit this checklist');
     }
-    const checklistHash = makeInlineMessageHash(
-      checklistChatId,
-      checklistMessageId,
-      inlineMessageId
-    );
+    const checklistHash = makeInlineMessageHash(location);
     // If the hash is found in the database, the user is trusted to have access
     // to the inline message id and the rest of the code runs as normal
     const dbHash = await prisma.inlineChecklistHash.findFirst({
@@ -478,6 +507,48 @@ async function checkChecklistPermissions(
   }
 }
 
+/**
+ * Forwards a temporary message, remember to delete it after.
+ *
+ * @throws TgError
+ */
+async function getChecklistMessage(
+  ctx: MyContext,
+  temporaryChatId: number,
+  location: ChecklistMessageLocation
+) {
+  let checklistMessage: Message;
+
+  try {
+    const { sourceChatId, sourceMessageId } = location;
+    checklistMessage = await ctx.api.forwardMessage(
+      temporaryChatId,
+      sourceChatId,
+      sourceMessageId,
+      { disable_notification: true }
+    );
+  } catch (error) {
+    if (error instanceof GrammyError) {
+      throw new TgError(
+        `Failed to read checklist contents due to error: <code>${error.message}</code>`
+      );
+    }
+    console.error('Failed to read checklist', error);
+    throw new TgError('Failed to read checklist contents due to unknown error');
+  }
+
+  if (!checklistMessage.text) {
+    throw new TgError('Failed to read checklist contents');
+  }
+
+  return {
+    checklistMessage: checklistMessage as Message & { text: string },
+    cleanTemporaryMessage: async () => {
+      await ctx.api.deleteMessage(temporaryChatId, checklistMessage.message_id);
+    },
+  };
+}
+
 // update a checklist
 checkListModule
   .on('message')
@@ -486,39 +557,55 @@ checkListModule
     (ctx) => ctx.match.startsWith('t_'),
     async (ctx) => {
       const splits = ctx.match.match(
-        /^t_([ci])_(-?\d+)_(\d+)_(\d+)(?:_(.+))?$/
+        /^t_([cif])_(-?\d+)_(\d+)_(\d+)(?:_(-?\d+|.+))?(?:_(\d+))?$/
       );
-      let checklistChatId = NaN;
-      let checklistMessageId = NaN;
+      const location: ChecklistMessageLocation = {
+        sourceChatId: NaN,
+        sourceMessageId: NaN,
+      };
       let checkBoxIdx = NaN;
-      let inlineMessageId: string | undefined = undefined;
 
       if (splits && splits[1] === 'c') {
-        checklistChatId = parseInt(splits[2], 10);
-        checklistMessageId = parseInt(splits[3], 10);
+        const splits = ctx.match.split('_');
+        location.sourceChatId = parseInt(splits[2], 10);
+        location.sourceMessageId = parseInt(splits[3], 10);
         checkBoxIdx = parseInt(splits[4], 10);
       } else if (splits && splits[1] === 'i') {
-        checklistChatId = parseInt(splits[2], 10);
-        checklistMessageId = parseInt(splits[3], 10);
+        location.sourceChatId = parseInt(splits[2], 10);
+        location.sourceMessageId = parseInt(splits[3], 10);
         checkBoxIdx = parseInt(splits[4], 10);
-        inlineMessageId = splits[5];
+        location.inlineMessageId = splits[5];
+      } else if (splits && splits[1] == 'f') {
+        const splits = ctx.match.split('_');
+        location.sourceChatId = parseInt(splits[2], 10);
+        location.sourceMessageId = parseInt(splits[3], 10);
+        checkBoxIdx = parseInt(splits[4], 10);
+        location.foreignChatId = parseInt(splits[5], 10);
+        location.foreignMessageId = parseInt(splits[6], 10);
       }
+
+      const {
+        sourceChatId,
+        sourceMessageId,
+        inlineMessageId,
+        foreignChatId,
+        foreignMessageId,
+      } = location;
       if (
-        isNaN(checklistChatId) ||
-        isNaN(checklistMessageId) ||
+        isNaN(sourceChatId) ||
+        isNaN(sourceMessageId) ||
         isNaN(checkBoxIdx) ||
-        checkBoxIdx < 0
+        checkBoxIdx < 0 ||
+        Number.isNaN(foreignChatId) ||
+        Number.isNaN(foreignMessageId)
       ) {
+        console.log({ location, splits });
         return await ctx.reply('Error parsing command...');
       }
 
+      // Check the permissions for the checklist
       try {
-        await checkChecklistPermissions(
-          ctx,
-          checklistChatId,
-          checklistMessageId,
-          inlineMessageId
-        );
+        await checkChecklistPermissions(ctx, location);
       } catch (error) {
         const prettyError =
           error instanceof TgError
@@ -527,38 +614,20 @@ checkListModule
         return await ctx.reply(prettyError);
       }
 
-      // get contents of the checklist
-      let checklistMessage: Message;
+      // Get contents of the checklist
+      let checklistMessage: Message & { text: string };
+      let cleanTemporaryMessage: () => Promise<void>;
       try {
-        // NOTE: this will NOT work if forwarding content is restricted.
-        // There is probably no workaround for this, without storing checklists in the database.
-        checklistMessage = await ctx.api.forwardMessage(
-          ctx.chat.id,
-          checklistChatId,
-          checklistMessageId,
-          { disable_notification: true }
-        );
+        const res = await getChecklistMessage(ctx, ctx.chat.id, location);
+        checklistMessage = res.checklistMessage;
+        cleanTemporaryMessage = res.cleanTemporaryMessage;
       } catch (error) {
-        if (error instanceof GrammyError) {
-          return await ctx.reply(
-            `Failed to read checklist contents due to error: <code>${error.message}</code>`
-          );
-        }
-        console.error('Failed to read checklist', error);
-        return await ctx.reply(
-          'Failed to read checklist contents due to unknown error'
-        );
+        const prettyError =
+          error instanceof TgError
+            ? error.message
+            : 'There was an error while getting the contents of the checklist';
+        return await ctx.reply(prettyError);
       }
-      if (!checklistMessage.text) {
-        return await ctx.reply('Failed to read checklist contents');
-      }
-
-      const cleanTemporaryMessage = async () => {
-        return await ctx.api.deleteMessage(
-          checklistMessage.chat.id,
-          checklistMessage.message_id
-        );
-      };
 
       // parse and update checklist
       const checklistData = extractCheckboxes(checklistMessage.text);
@@ -571,21 +640,14 @@ checkListModule
       lines[checkBoxIdx].isChecked = !lines[checkBoxIdx].isChecked;
 
       // send the new checklist
-      const urlGenerator = inlineMessageId
-        ? checklistInlineUrl(
-            ctx,
-            checklistChatId,
-            checklistMessageId,
-            inlineMessageId
-          )
-        : checklistUrl(ctx, checklistChatId, checklistMessageId);
+      const urlGenerator = checklistUrl(ctx, location);
       const checklistText = formatCheckBoxLines(checklistData, urlGenerator);
       await ctx.api.editMessageText(
-        checklistChatId,
-        checklistMessageId,
+        sourceChatId,
+        sourceMessageId,
         checklistText
       );
-      if (checklistChatId === ctx.chat.id && !inlineMessageId) {
+      if (sourceChatId === ctx.chat.id && !inlineMessageId && !foreignChatId) {
         await ctx.deleteMessage();
       } else {
         await ctx.reply('✅ Done, press back to return to the chat', {
@@ -596,6 +658,12 @@ checkListModule
       // update the inline message if available
       if (inlineMessageId !== undefined) {
         await ctx.api.editMessageTextInline(inlineMessageId, checklistText);
+      } else if (foreignChatId && foreignMessageId !== undefined) {
+        await ctx.api.editMessageText(
+          foreignChatId,
+          foreignMessageId,
+          checklistText
+        );
       }
 
       return await cleanTemporaryMessage();
