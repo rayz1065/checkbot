@@ -17,16 +17,26 @@ model Session {
 }
 
 model User {
-  id               Int      @id @default(autoincrement())
-  telegram_chat_id Int      @unique
+  id               Int         @id @default(autoincrement())
+  telegram_chat_id Int         @unique
   first_name       String
   last_name        String?
   username         String?
-  created_at       DateTime @default(now())
+  created_at       DateTime    @default(now())
   language         String?
   invited_by_id    Int?
-  invited_by       User?    @relation("invites", fields: [invited_by_id], references: [id])
-  invited_users    User[]   @relation("invites")
+  invited_by       User?       @relation("invites", fields: [invited_by_id], references: [id])
+  invited_users    User[]      @relation("invites")
+  config           UserConfig?
+}
+
+model UserConfig {
+  id                    Int    @id @default(autoincrement())
+  user_id               Int    @unique
+  default_checked_box   String
+  default_unchecked_box String
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
 
 model InlineChecklistHash {
