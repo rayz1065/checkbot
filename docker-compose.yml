@@ -5,9 +5,8 @@ services:
     image: postgres:15-alpine
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
-      - "${POSTGRES_PORT_EXTERNAL}:5432"
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT_EXTERNAL}:5432"
     restart: unless-stopped
     volumes:
       - pgdata:/var/lib/postgresql/data
