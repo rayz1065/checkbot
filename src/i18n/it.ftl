@@ -46,9 +46,11 @@ welcome-message = 👋 Ciao <b>{$user-name}</b>, benvenut{-schwa} su {$bot-name}
 
 done-press-back = Fatto, clicca indietro per tornare alla chat
 
+help-btn = Aiuto 🆘
+need-help-with-the-bot = Ti serve una mano con il bot?
+contact-me = Contattami {-bot-creator}
+
 validation-photo-required = Una foto è richiesta
 validation-string-length = Invia una stringa tra {$min} e {$max} caratteri
 validation-send-valid-number = Invia un numero valido
-failed-to-get-question = Non sono riuscito a inviare la domanda
-failed-to-send-answer = Non sono riuscito ad inviare la soluzione
 invalid-choice = Scelta non valida

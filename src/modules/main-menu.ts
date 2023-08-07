@@ -9,7 +9,10 @@ const mainMenuPrivate = mainMenuModule.chatType(['private']);
 function mainMenuMsg(ctx: MyContext) {
   return {
     text: ctx.t('welcome-message'),
-    keyboard: [[checkConfigMenu.getBtn(ctx.t('config-btn'))]],
+    keyboard: [
+      [checkConfigMenu.getBtn(ctx.t('config-btn'))],
+      [helpCb.getBtn(ctx.t('help-btn'))],
+    ],
   };
 }
 
@@ -24,6 +27,29 @@ export const mainMenuCb = new TgCallback('menu', async (ctx) => {
   await ctx.answerCallbackQuery('👋');
 });
 
+function helpMsg(ctx: MyContext) {
+  return {
+    text:
+      `<b>${ctx.t('help-btn')}</b>\n` +
+      `${ctx.t('need-help-with-the-bot')}\n` +
+      `${ctx.t('contact-me')}`,
+    keyboard: [[mainMenuCb.getBtn(ctx.t('back-to-menu'))]],
+  };
+}
+
+export const helpCb = new TgCallback('help', async (ctx) => {
+  const { text, keyboard } = helpMsg(ctx);
+  await ctx.editMessageText(text, ik(keyboard));
+  await ctx.answerCallbackQuery(ctx.t('help-btn'));
+});
+
+mainMenuPrivate.command('help', async (ctx) => {
+  const { text, keyboard } = helpMsg(ctx);
+  await ctx.reply(text, ik(keyboard));
+});
+
 mainMenuModule
   .on('callback_query:data')
-  .lazy(tgCallbackMiddleware([mainMenuCb].map((x) => x.setPrefix('menu'))));
+  .lazy(
+    tgCallbackMiddleware([mainMenuCb, helpCb].map((x) => x.setPrefix('menu')))
+  );

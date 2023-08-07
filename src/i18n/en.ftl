@@ -45,6 +45,10 @@ welcome-message = 👋 Hello <b>{$user-name}</b>, welcome to {$bot-name}!
 
 done-press-back = Done, press back to return to the chat
 
+help-btn = Help 🆘
+need-help-with-the-bot = Need help with the bot?
+contact-me = Contact me {-bot-creator}
+
 validation-photo-required = A photo is required
 validation-string-length = Send a string between {$min} and {$max} characters
 validation-send-valid-number = Send a valid number
