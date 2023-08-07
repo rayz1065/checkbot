@@ -562,7 +562,9 @@ checkListModule.on('chosen_inline_result').filter(
       );
     }
 
-    await ctx.api.editMessageTextInline(inlineMessageId, checklistText);
+    await ctx.api.editMessageTextInline(inlineMessageId, checklistText, {
+      disable_web_page_preview: true,
+    });
   }
 );
 
