@@ -20,6 +20,8 @@ import { checkListChannelModule, checkListModule } from './modules/checklist';
 dotenv.config();
 if (!process.env.BOT_TOKEN) {
   throw new Error('Bot token not found');
+} else if (!process.env.CHECKBOX_HMAC_SECRET) {
+  throw new Error('CHECKBOX_HMAC_SECRET is not set');
 }
 
 // session, context, conversation types

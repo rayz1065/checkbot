@@ -19,7 +19,7 @@ services:
       dockerfile: ./docker/app.dockerfile
     restart: unless-stopped
     volumes:
-      - node_modules:/usr/src/app/node_modules
+      - /usr/src/app/node_modules
       - ./storage:/usr/src/app/storage
     networks:
       - bot-network
@@ -29,7 +29,6 @@ services:
 
 volumes:
   pgdata:
-  node_modules:
 
 networks:
   bot-network:
