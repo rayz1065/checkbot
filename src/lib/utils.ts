@@ -141,6 +141,10 @@ export function ik(keyboard: InlineKeyboardButton[][]): {
   return { reply_markup: { inline_keyboard: keyboard } };
 }
 
+export function selectedBtnText(text: string, isMatched: boolean) {
+  return isMatched ? `• ${text} •` : text;
+}
+
 /**
  * tries deleting the a message, on failure clears the message id
  * so that a new message can be sent

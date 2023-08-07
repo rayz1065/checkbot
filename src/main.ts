@@ -7,15 +7,17 @@ import {
   ConversationFlavor,
   conversations,
 } from '@grammyjs/conversations';
-import { escapeHtml, findTgCallback } from './lib/utils';
+import { escapeHtml, findTgCallback, ik } from './lib/utils';
 import { calendarCallbacks } from './lib/calendar';
-import { PrismaClient, User } from '@prisma/client';
+import { PrismaClient, User, UserConfig } from '@prisma/client';
 import { authenticate } from './middlewares/authenticate';
 import { I18n, I18nFlavor } from '@grammyjs/i18n';
 import { emoji } from 'node-emoji';
 import path from 'path';
 import { PrismaAdapter } from '@grammyjs/storage-prisma';
 import { checkListChannelModule, checkListModule } from './modules/checklist';
+import { checkConfigModule } from './modules/check-config';
+import { mainMenuModule } from './modules/main-menu';
 
 dotenv.config();
 if (!process.env.BOT_TOKEN) {
@@ -32,7 +34,7 @@ export type MyContext = ParseModeFlavor<
   SessionFlavor<MySessionData> & ConversationFlavor<Context> & I18nFlavor
 > & {
   callbackParams: any;
-  dbUser: User;
+  dbUser: User & { config: UserConfig | null };
   conversationData?: {
     messageId?: number;
   } & Record<string, any>;
@@ -51,6 +53,7 @@ const i18n = new I18n<MyContext>({
       'emoji-back': emoji.back,
       'emoji-confirm': emoji.white_check_mark,
       'user-name': escapeHtml(ctx.from?.first_name ?? ''),
+      'bot-name': ctx.me.username,
     };
   },
 });
@@ -80,24 +83,34 @@ bot.use(checkListChannelModule);
 bot.use(authenticate);
 
 // share bot
-bot.inlineQuery('share', async (ctx) => {
-  // await ctx.answerInlineQuery(
-  //   [
-  //     {
-  //       id: 'share',
-  //       type: 'photo',
-  //       photo_file_id: process.env.LOGO_FILE_ID ?? '',
-  //       caption: ctx.t('join-bot'),
-  //       reply_markup: new InlineKeyboard().url(
-  //         `${ctx.t('enter-bot')} ${emoji.atom_symbol}`,
-  //         `https://t.me/${ctx.me.username}?start=ref_${ctx.dbUser.id}`
-  //       ),
-  //       parse_mode: 'HTML',
-  //     },
-  //   ],
-  //   { cache_time: 0 }
-  // );
-});
+bot.on('inline_query').filter(
+  (ctx) => ctx.inlineQuery.query === '',
+  async (ctx) => {
+    await ctx.answerInlineQuery(
+      [
+        {
+          id: 'share',
+          type: 'article',
+          title: `${ctx.t('share')} ${ctx.me.first_name}`,
+          description: `${ctx.t('join-bot')} ${emoji.white_check_mark}`,
+          input_message_content: {
+            message_text: ctx.t('join-bot'),
+            parse_mode: 'HTML',
+          },
+          ...ik([
+            [
+              {
+                text: `${ctx.t('enter-bot')} ${emoji.white_check_mark}`,
+                url: `https://t.me/${ctx.me.username}?start=ref_${ctx.dbUser.id}`,
+              },
+            ],
+          ]),
+        },
+      ],
+      { cache_time: 0 }
+    );
+  }
+);
 
 // set up conversations
 bot.use(conversations());
@@ -122,6 +135,8 @@ bot.command('cancel', async (ctx) => {
 
 // modules
 bot.use(checkListModule);
+bot.use(checkConfigModule);
+bot.use(mainMenuModule);
 
 // listen for callbacks
 bot.on('callback_query:data').lazy((ctx) => {
@@ -137,10 +152,6 @@ bot.on('callback_query:data').lazy((ctx) => {
 
 bot.on('callback_query:data', async (ctx) => {
   await ctx.answerCallbackQuery('I did not understand the request');
-});
-
-bot.command('start', async (ctx) => {
-  await ctx.reply('👋 Hello');
 });
 
 bot.catch((error) => {

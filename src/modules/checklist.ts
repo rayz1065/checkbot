@@ -5,6 +5,11 @@ import { Chat, InlineQueryResultsButton, Message } from 'grammy/types';
 import crypto from 'crypto';
 import assert from 'assert';
 import { decodeDeepLinkParams, encodeDeepLinkUrl } from '../lib/deep-linking';
+import base from 'base-x';
+import { getEmptyConfig } from './check-config';
+const base62 = base(
+  '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+);
 
 type CheckBoxLine =
   | {
@@ -37,8 +42,9 @@ interface ChecklistMessageLocation {
 export const checkListModule = new Composer<MyContext>();
 export const checkListChannelModule = new Composer<MyContext>();
 
-const checkedBoxes = ['✅', '☑️', '✔️', '- [x]', '☑', '✔'];
-const uncheckedBoxes = ['- [ ]'];
+export const suggestedCheckedBoxes = ['✅', '☑️', '✔️'];
+export const suggestedUncheckedBoxes = ['- [ ]', '- [  ]', '- [   ]'];
+export const checkedBoxes = [...suggestedCheckedBoxes, '- [x]', '☑', '✔'];
 
 function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
@@ -78,7 +84,7 @@ function isLineUnchecked(line: string) {
   };
 }
 
-function extractCheckboxes(messageText: string): ChecklistData {
+function extractCheckboxes(ctx: MyContext, messageText: string): ChecklistData {
   const lines = messageText.split('\n');
   let hasCheckBoxes = false;
   let checkedBoxStyle: string | null = null;
@@ -119,8 +125,9 @@ function extractCheckboxes(messageText: string): ChecklistData {
     });
   }
 
-  checkedBoxStyle = checkedBoxStyle ?? checkedBoxes[0];
-  uncheckedBoxStyle = uncheckedBoxStyle ?? uncheckedBoxes[0];
+  const config = ctx.dbUser.config ?? getEmptyConfig();
+  checkedBoxStyle = checkedBoxStyle ?? config.default_checked_box;
+  uncheckedBoxStyle = uncheckedBoxStyle ?? config.default_unchecked_box;
 
   return {
     hasCheckBoxes,
@@ -222,13 +229,13 @@ function computeLocationSignature(location: ChecklistMessageLocation) {
 
   assert(process.env.CHECKBOX_HMAC_SECRET);
 
-  const hashedLocation = crypto
+  const hashResult = crypto
     .createHmac('sha256', process.env.CHECKBOX_HMAC_SECRET)
     .update(stringifiedLocation)
-    .digest()
-    .toString('hex');
+    .digest();
+  const hashedLocation = base62.encode(hashResult);
 
-  return `${location.salt}${hashedLocation.substring(0, 7)}`;
+  return `${location.salt}${hashedLocation.substring(0, 12)}`;
 }
 
 function parseLocationIdentifier(identifier: string) {
@@ -358,7 +365,7 @@ const replyWithChecklist = async (
     location.sourceChatId = ctx.message.from.id;
   }
 
-  const checklistData = extractCheckboxes(checklistText);
+  const checklistData = extractCheckboxes(ctx, checklistText);
   try {
     await sendChecklist(ctx, checklistData, location);
   } catch (error) {
@@ -409,7 +416,7 @@ checkListModule
   .on('message:text')
   .filter(
     // Only handle this message if it has checkboxes
-    (ctx) => extractCheckboxes(ctx.message.text).hasCheckBoxes,
+    (ctx) => extractCheckboxes(ctx, ctx.message.text).hasCheckBoxes,
     (ctx) => replyWithChecklist(ctx, ctx.message.text)
   );
 
@@ -424,7 +431,7 @@ checkListChannelModule
         return;
       }
 
-      const checklistData = extractCheckboxes(ctx.msg.text);
+      const checklistData = extractCheckboxes(ctx, ctx.msg.text);
       const location: ChecklistMessageLocation = {
         sourceChatId: ctx.msg.chat.id,
         sourceMessageId: ctx.msg.message_id,
@@ -443,13 +450,14 @@ checkListChannelModule
     }
   );
 
-function getInlineQueryCheckBoxes(text: string) {
+function getInlineQueryCheckBoxes(ctx: MyContext) {
   // replaces lines which are not checkboxes with an unchecked line
+  const text = (ctx.inlineQuery ?? ctx.chosenInlineResult)!.query;
   const items = text
     .split('\n')
     .filter((x) => x.length > 0)
     .map((x) => (isLineChecked(x) || isLineUnchecked(x) ? x : `- [ ] ${x}`));
-  return extractCheckboxes(items.join('\n'));
+  return extractCheckboxes(ctx, items.join('\n'));
 }
 
 checkListModule.inlineQuery(/^.+/, async (ctx) => {
@@ -460,7 +468,7 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
       text: 'Warning, inline query is too long!',
     };
   }
-  const checklistData = getInlineQueryCheckBoxes(ctx.inlineQuery.query);
+  const checklistData = getInlineQueryCheckBoxes(ctx);
 
   return await ctx.answerInlineQuery(
     [
@@ -504,9 +512,7 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
 checkListModule.on('chosen_inline_result').filter(
   (ctx) => ctx.chosenInlineResult.result_id === 'checklist',
   async (ctx) => {
-    const checklistData = getInlineQueryCheckBoxes(
-      ctx.chosenInlineResult.query
-    );
+    const checklistData = getInlineQueryCheckBoxes(ctx);
     const inlineMessageId = ctx.chosenInlineResult.inline_message_id;
     if (!inlineMessageId) {
       return console.error('Failed to get inline message id', ctx);
@@ -692,7 +698,7 @@ checkListModule
       }
 
       // parse and update checklist
-      const checklistData = extractCheckboxes(checklistMessage.text);
+      const checklistData = extractCheckboxes(ctx, checklistMessage.text);
       const { lines } = checklistData;
       if (lines.length <= checkBoxIdx || !lines[checkBoxIdx].hasCheckBox) {
         await ctx.reply('Invalid checkbox idx');
@@ -712,9 +718,10 @@ checkListModule
       if (sourceChatId === ctx.chat.id && !inlineMessageId && !foreignChatId) {
         await ctx.deleteMessage();
       } else {
-        await ctx.reply('✅ Done, press back to return to the chat', {
-          disable_notification: true,
-        });
+        await ctx.reply(
+          `${checklistData.checkedBoxStyle} ${ctx.t('done-press-back')}`,
+          { disable_notification: true }
+        );
       }
 
       // update the inline message if available
