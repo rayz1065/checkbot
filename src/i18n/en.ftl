@@ -49,6 +49,17 @@ help-btn = Help 🆘
 need-help-with-the-bot = Need help with the bot?
 contact-me = Contact me {-bot-creator}
 
+add-to-group = Add me to a group 👥
+info = Info ℹ️
+use-inline = Inline mode ↩️
+
+info-message =
+    🧑‍💻 Developer: @rayz1065
+    🗃 Source: github.com/rayz1065/checkbot
+    📄 License: <a href="https://www.gnu.org/licenses/agpl-3.0.en.html">GNU Affero General Public License</a>
+
+    🤖 This bot is written in TypeScript and is based on the framework <a href="https://grammy.dev/">grammY</a>
+
 validation-photo-required = A photo is required
 validation-string-length = Send a string between {$min} and {$max} characters
 validation-send-valid-number = Send a valid number
