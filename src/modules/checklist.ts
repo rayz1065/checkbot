@@ -306,7 +306,8 @@ async function sendChecklist(
   const { sourceChatId, foreignChatId } = location;
   const checklistMessage = await ctx.api.sendMessage(
     sourceChatId,
-    normalizedText
+    normalizedText,
+    { disable_web_page_preview: true }
   );
   const sourceMessageId = checklistMessage.message_id;
   const completeLocation: ChecklistMessageLocation = {
@@ -318,7 +319,8 @@ async function sendChecklist(
     // get a foreignMessageId
     const foreignChecklistMessage = await ctx.api.sendMessage(
       foreignChatId,
-      normalizedText
+      normalizedText,
+      { disable_web_page_preview: true }
     );
     completeLocation.foreignMessageId = foreignChecklistMessage.message_id;
   }
@@ -328,13 +330,19 @@ async function sendChecklist(
   const checklistText = formatCheckBoxLines(checklistData, urlGenerator);
 
   if (checklistData.hasCheckBoxes) {
-    await ctx.api.editMessageText(sourceChatId, sourceMessageId, checklistText);
+    await ctx.api.editMessageText(
+      sourceChatId,
+      sourceMessageId,
+      checklistText,
+      { disable_web_page_preview: true }
+    );
 
     if (foreignChatId && completeLocation.foreignMessageId) {
       await ctx.api.editMessageText(
         foreignChatId,
         completeLocation.foreignMessageId,
-        checklistText
+        checklistText,
+        { disable_web_page_preview: true }
       );
     }
   }
@@ -445,7 +453,8 @@ checkListChannelModule
       await ctx.api.editMessageText(
         location.sourceChatId,
         location.sourceMessageId,
-        checklistText
+        checklistText,
+        { disable_web_page_preview: true }
       );
     }
   );
@@ -478,6 +487,7 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
         input_message_content: {
           message_text: formatCheckBoxLines(checklistData, () => ''),
           parse_mode: 'HTML',
+          disable_web_page_preview: true,
         },
         ...ik([
           [
@@ -713,7 +723,8 @@ checkListModule
       await ctx.api.editMessageText(
         sourceChatId,
         sourceMessageId,
-        checklistText
+        checklistText,
+        { disable_web_page_preview: true }
       );
       if (sourceChatId === ctx.chat.id && !inlineMessageId && !foreignChatId) {
         await ctx.deleteMessage();
@@ -728,7 +739,9 @@ checkListModule
       if (inlineMessageId !== undefined) {
         // May fail if the message has been deleted
         try {
-          await ctx.api.editMessageTextInline(inlineMessageId, checklistText);
+          await ctx.api.editMessageTextInline(inlineMessageId, checklistText, {
+            disable_web_page_preview: true,
+          });
         } catch (error) {}
       } else if (foreignChatId && foreignMessageId !== undefined) {
         try {
@@ -736,7 +749,8 @@ checkListModule
           await ctx.api.editMessageText(
             foreignChatId,
             foreignMessageId,
-            checklistText
+            checklistText,
+            { disable_web_page_preview: true }
           );
         } catch (error) {}
       }
