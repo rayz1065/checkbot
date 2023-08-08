@@ -2,9 +2,7 @@
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "nodemon --watch src/ src/bin/run.ts",
-    "build": "npx tsc",
-    "rename-files": "ts-node src/bin/file-renamer.ts",
-    "import-old-data": "ts-node src/bin/old-data-importer.ts"
+    "build": "npx tsc"
   },
   "dependencies": {
     "@grammyjs/conversations": "^1.1.2",
