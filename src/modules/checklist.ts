@@ -406,7 +406,12 @@ const replyWithChecklist = async (
 // 'check' command
 checkListModule
   .chatType(['group', 'supergroup', 'private'])
-  .command('check', (ctx) => replyWithChecklist(ctx, ctx.match));
+  .command('check', async (ctx) => {
+    if (ctx.match === '') {
+      return await ctx.reply(ctx.t('check-command-usage'));
+    }
+    await replyWithChecklist(ctx, ctx.match);
+  });
 
 // message containing #check
 checkListModule

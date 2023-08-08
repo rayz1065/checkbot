@@ -42,8 +42,8 @@ export type MyContext = ParseModeFlavor<
 export type MyConversation = Conversation<MyContext>;
 
 // set up translations
-const i18n = new I18n<MyContext>({
-  defaultLocale: 'en',
+export const i18n = new I18n<MyContext>({
+  defaultLocale: process.env.DEFAULT_LOCALE ?? 'en',
   directory: path.join(__dirname, 'i18n'),
   localeNegotiator: (ctx) =>
     ctx.dbUser?.language ?? ctx.from?.language_code ?? 'en',

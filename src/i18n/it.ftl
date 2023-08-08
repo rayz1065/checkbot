@@ -61,6 +61,36 @@ info-message =
 
     🤖 Questo bot è scritto in TypeScript e usa il framework <a href="https://grammy.dev/">grammY</a>
 
+help-command-tip = Chiedi aiuto per il bot
+config-command-tip = Imposta le tue preferenze, cambia la lingua
+check-command-tip = Crea una checklist in un gruppo
+
+bot-name = Checklist Bot ✅
+
+bot-description =
+    👥 Aggiungimi ad un gruppo e usa l'hashtag #check o il comando /check
+    📺 Modificherò rapidamente le checklist inviate e modificate che contengono #check
+    ↩️ Usami in modalità inline in qualsiasi conversazione
+    🤖 Invia semplicemente un messaggio contenente "-" o ✅ in questa chat
+
+    😶‍🌫️ Nessuna delle tue checklist viene salvata in alcun modo, rimangono semplicemente su telegram!
+
+bot-short-description =
+    😶‍🌫️ Crea checklist interamente private
+    🧑‍💻 Sviluppatore: @rayz1065
+    🗃 Codice: https://github.com/rayz1065/checkbot
+
+check-command-usage =
+    Per usare questo comando scrivi semplicemente:
+    <code>/check
+    - Un elemento senza check
+    - [ ] Anche questo è senza check
+    ✅ Un elemento con il check
+    - [x ] Puoi mettere una x in qualunque posto nel box
+    </code>
+
+    Questo comando dovrebbe essere usato nei gruppi, nella chat privata invia semplicemente un messaggio con una checklist.
+
 validation-photo-required = Una foto è richiesta
 validation-string-length = Invia una stringa tra {$min} e {$max} caratteri
 validation-send-valid-number = Invia un numero valido
