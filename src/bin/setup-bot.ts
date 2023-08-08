@@ -1,14 +1,8 @@
 /**
  * Utility script to perform the bot setup, run with --help for usage
  */
-import * as dotenv from 'dotenv';
 import { program } from 'commander';
 import { bot, i18n } from '../main';
-
-dotenv.config();
-if (!process.env.BOT_TOKEN) {
-  throw new Error('Bot token not found');
-}
 
 const defaultLocale = process.env.DEFAULT_LOCALE ?? 'en';
 
