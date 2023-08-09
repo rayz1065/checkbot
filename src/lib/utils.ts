@@ -132,7 +132,7 @@ export function escapeHtml(text: string) {
     '>': '&gt;',
   };
 
-  return text.replace(/[&<>"']/g, (m) => map[m as keyof typeof map]);
+  return text.replace(/[&<>]/g, (m) => map[m as keyof typeof map]);
 }
 
 export function ik(keyboard: InlineKeyboardButton[][]): {
