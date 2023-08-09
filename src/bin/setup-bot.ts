@@ -1,10 +1,22 @@
 /**
  * Utility script to perform the bot setup, run with --help for usage
  */
-import { program } from 'commander';
+import { Option, program } from 'commander';
 import { bot, i18n } from '../main';
 
-const defaultLocale = process.env.DEFAULT_LOCALE ?? 'en';
+const availableLocales = [
+  ...i18n.locales.map((locale) => ({
+    locale,
+    languageCode: locale,
+    name: locale,
+  })),
+  {
+    locale: process.env.DEFAULT_LOCALE ?? 'en',
+    languageCode: undefined,
+    name: 'default',
+  },
+];
+const localesToUpdate: (typeof availableLocales)[number][] = [];
 
 program
   .option('--name', 'Update the name of the bot')
@@ -12,7 +24,20 @@ program
   .option('--description', 'Update the description of the bot')
   .option('--short_description', 'Update the short description of the bot')
   .option('--rights', 'Updates the requested rights in channels and groups')
-  .option('--all', 'Update everything')
+  .addOption(
+    new Option('--all', 'Update everything').implies({
+      name: true,
+      commands: true,
+      description: true,
+      short_description: true,
+      rights: true,
+    })
+  )
+  .addOption(
+    new Option('--lang <string>', 'Update just a single language').choices(
+      availableLocales.map((x) => x.name)
+    )
+  )
   .addHelpText('beforeAll', 'This utility script can help you setup your bot')
   .addHelpText('afterAll', furtherSetup());
 
@@ -25,67 +50,57 @@ const options: {
   short_description?: true;
   rights?: true;
   all?: true;
+  lang?: string;
 } = program.opts();
 
-function getLanguageCode(locale: string) {
-  return locale === defaultLocale ? undefined : locale;
-}
-
-function prettyPrintLocale(locale: string) {
-  return locale === defaultLocale ? 'default' : locale;
-}
-
 async function setMyName() {
-  for (const locale of i18n.locales) {
-    await bot.api.setMyName(i18n.translate(locale, 'bot-name'), {
-      language_code: getLanguageCode(locale),
+  for (const locale of localesToUpdate) {
+    await bot.api.setMyName(i18n.translate(locale.locale, 'bot-name'), {
+      language_code: locale.languageCode,
     });
-    console.log('Updated name for locale', prettyPrintLocale(locale));
+    console.log('Updated name for locale', locale.name);
   }
 }
 
 async function setMyCommands() {
-  for (const locale of i18n.locales) {
+  for (const locale of localesToUpdate) {
     await bot.api.setMyCommands(
       [
         {
           command: 'help',
-          description: i18n.t(locale, 'help-command-tip'),
+          description: i18n.t(locale.locale, 'help-command-tip'),
         },
         {
           command: 'config',
-          description: i18n.t(locale, 'config-command-tip'),
+          description: i18n.t(locale.locale, 'config-command-tip'),
         },
         {
           command: 'check',
-          description: i18n.t(locale, 'check-command-tip'),
+          description: i18n.t(locale.locale, 'check-command-tip'),
         },
       ],
-      { language_code: getLanguageCode(locale) }
+      { language_code: locale.languageCode }
     );
-    console.log('Updated commands for locale', prettyPrintLocale(locale));
+    console.log('Updated commands for locale', locale.name);
   }
 }
 
 async function setMyDescription() {
-  for (const locale of i18n.locales) {
-    await bot.api.setMyDescription(i18n.t(locale, 'bot-description'), {
-      language_code: getLanguageCode(locale),
+  for (const locale of localesToUpdate) {
+    await bot.api.setMyDescription(i18n.t(locale.locale, 'bot-description'), {
+      language_code: locale.languageCode,
     });
-    console.log('Updated description for locale', prettyPrintLocale(locale));
+    console.log('Updated description for locale', locale.name);
   }
 }
 
 async function setMyShortDescription() {
-  for (const locale of i18n.locales) {
+  for (const locale of localesToUpdate) {
     await bot.api.setMyShortDescription(
-      i18n.t(locale, 'bot-short-description'),
-      { language_code: getLanguageCode(locale) }
+      i18n.t(locale.locale, 'bot-short-description'),
+      { language_code: locale.languageCode }
     );
-    console.log(
-      'Updated short description for locale',
-      prettyPrintLocale(locale)
-    );
+    console.log('Updated short description for locale', locale.name);
   }
 }
 
@@ -139,14 +154,6 @@ function furtherSetup() {
 }
 
 async function main() {
-  if (options.all) {
-    options.name = true;
-    options.commands = true;
-    options.description = true;
-    options.short_description = true;
-    options.rights = true;
-  }
-
   if (
     !options.name &&
     !options.commands &&
@@ -156,6 +163,14 @@ async function main() {
   ) {
     program.outputHelp();
     process.exit();
+  }
+
+  if (options.lang) {
+    localesToUpdate.push(
+      availableLocales.find((x) => x.name === options.lang)!
+    );
+  } else {
+    localesToUpdate.push(...availableLocales);
   }
 
   if (options.name) {
@@ -174,6 +189,7 @@ async function main() {
     await setMyDefaultAdministratorRights();
   }
 
+  console.log();
   console.log(furtherSetup());
 }
 
