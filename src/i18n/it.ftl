@@ -91,6 +91,11 @@ check-command-usage =
 
     Questo comando dovrebbe essere usato nei gruppi, nella chat privata invia semplicemente un messaggio con una checklist.
 
+never-show-again = Non mostrare più 🌫
+show-edit-confirmation = Mostra conferma di modifica 💬
+i-will-not-show-again = Non mostrerò più questo messaggio 🌫
+you-can-show-again-in-config = Puoi mostrarlo di nuovo nelle configurazioni scrivendo /config
+
 validation-photo-required = Una foto è richiesta
 validation-string-length = Invia una stringa tra {$min} e {$max} caratteri
 validation-send-valid-number = Invia un numero valido

@@ -31,15 +31,11 @@ model User {
 }
 
 model UserConfig {
-  id                    Int    @id @default(autoincrement())
-  user_id               Int    @unique
-  default_checked_box   String
-  default_unchecked_box String
+  id                     Int     @id @default(autoincrement())
+  user_id                Int     @unique
+  default_checked_box    String
+  default_unchecked_box  String
+  show_edit_confirmation Boolean @default(true)
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
-}
-
-model InlineChecklistHash {
-  id   Int    @id @default(autoincrement())
-  hash String
 }

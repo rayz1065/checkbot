@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import assert from 'assert';
 import { decodeDeepLinkParams, encodeDeepLinkUrl } from '../lib/deep-linking';
 import base from 'base-x';
-import { getEmptyConfig } from './check-config';
+import { getEmptyConfig, setShowEditConfirmation } from './check-config';
 const base62 = base(
   '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 );
@@ -733,13 +733,30 @@ checkListModule
         checklistText,
         { disable_web_page_preview: true }
       );
-      if (sourceChatId === ctx.chat.id && !inlineMessageId && !foreignChatId) {
-        await ctx.deleteMessage();
-      } else {
+
+      // the confirmation is shown to users that did not disable it,
+      // for checklists that are mirrored in other chats, like inline and foreign
+      const userConfig = ctx.dbUser.config ?? getEmptyConfig();
+      const isPrivateChecklist =
+        sourceChatId === ctx.chat.id && !inlineMessageId && !foreignChatId;
+      if (!isPrivateChecklist && userConfig.show_edit_confirmation) {
         await ctx.reply(
           `${checklistData.checkedBoxStyle} ${ctx.t('done-press-back')}`,
-          { disable_notification: true }
+          {
+            disable_notification: true,
+            ...ik([
+              [
+                setShowEditConfirmation.getBtn(
+                  ctx.t('never-show-again'),
+                  false,
+                  'never-show-again'
+                ),
+              ],
+            ]),
+          }
         );
+      } else {
+        await ctx.deleteMessage();
       }
 
       // update the inline message if available

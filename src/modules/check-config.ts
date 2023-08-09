@@ -21,6 +21,7 @@ export function getEmptyConfig(): Omit<Omit<UserConfig, 'user_id'>, 'id'> {
   return {
     default_checked_box: suggestedCheckedBoxes[0],
     default_unchecked_box: '- [ ]',
+    show_edit_confirmation: true,
   };
 }
 
@@ -48,6 +49,15 @@ function checkConfigMsg(ctx: MyContext) {
     ),
   ];
   if (ctx.from && ctx.from?.id === ctx.chat?.id) {
+    if (!config.show_edit_confirmation) {
+      keyboard.push([
+        setShowEditConfirmation.getBtn(
+          ctx.t('show-edit-confirmation'),
+          !config.show_edit_confirmation
+        ),
+      ]);
+    }
+
     keyboard.push([mainMenuCb.getBtn(ctx.t('back-to-menu'))]);
   }
 
@@ -149,6 +159,28 @@ const pickLanguage = new TgCallback<[code: string]>('lang', async (ctx) => {
   await ctx.answerCallbackQuery(ctx.t('updated-language'));
 });
 
+export const setShowEditConfirmation = new TgCallback<
+  [value: boolean, source?: 'never-show-again']
+>('edit-conf', async (ctx) => {
+  const [value, source] = ctx.callbackParams;
+  if (ctx.dbUser.config?.show_edit_confirmation === value) {
+    return await ctx.answerCallbackQuery(ctx.t('default-already-set'));
+  }
+  await upsertConfig(ctx, { show_edit_confirmation: value });
+
+  if (source === 'never-show-again') {
+    await ctx.editMessageText(
+      `${ctx.t('i-will-not-show-again')}\n` +
+        `<i>${ctx.t('you-can-show-again-in-config')}</i>`
+    );
+  } else {
+    const { text, keyboard } = checkConfigMsg(ctx);
+    await ctx.editMessageText(text, ik(keyboard));
+  }
+
+  await ctx.answerCallbackQuery(ctx.t('updated-preference'));
+});
+
 checkConfigModule
   .on('callback_query:data')
   .lazy(
@@ -158,6 +190,7 @@ checkConfigModule
         pickDefaultUncheckedBox,
         checkConfigMenu,
         pickLanguage,
+        setShowEditConfirmation,
       ].map((x) => x.setPrefix('chk-conf'))
     )
   );
