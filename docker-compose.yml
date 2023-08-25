@@ -5,6 +5,7 @@ services:
     image: postgres:15-alpine
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PW}
     ports:
       - "${POSTGRES_PORT_EXTERNAL}:5432"
     restart: unless-stopped

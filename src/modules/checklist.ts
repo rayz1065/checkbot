@@ -125,7 +125,7 @@ function extractCheckboxes(ctx: MyContext, messageText: string): ChecklistData {
     });
   }
 
-  const config = ctx.dbUser.config ?? getEmptyConfig();
+  const config = ctx.dbUser?.config ?? getEmptyConfig();
   checkedBoxStyle = checkedBoxStyle ?? config.default_checked_box;
   uncheckedBoxStyle = uncheckedBoxStyle ?? config.default_unchecked_box;
 
