@@ -37,6 +37,7 @@ interface ChecklistMessageLocation {
   foreignChatId?: number;
   foreignMessageId?: number;
   inlineMessageId?: string;
+  isPersonal?: boolean;
 }
 
 export const checkListModule = new Composer<MyContext>();
@@ -176,13 +177,14 @@ function checklistUrl(ctx: MyContext, location: ChecklistMessageLocation) {
     inlineMessageId,
     foreignChatId,
     foreignMessageId,
+    isPersonal,
   } = location;
 
   if (inlineMessageId) {
     return (idx: number) =>
       encodeDeepLinkUrl(ctx.me, [
         't',
-        'i',
+        isPersonal ? 'j' : 'i',
         sourceChatId.toString(36),
         sourceMessageId.toString(36),
         idx.toString(36),
@@ -254,7 +256,8 @@ function parseLocationIdentifier(identifier: string) {
     location.sourceMessageId = parseInt(splits[3], 36);
     checkBoxIdx = parseInt(splits[4], 36);
     signature = splits[5];
-  } else if (splits.length === 7 && splits[1] === 'i') {
+  } else if (splits.length === 7 && ['i', 'j'].indexOf(splits[1]) !== -1) {
+    location.isPersonal = splits[1] === 'j';
     location.sourceChatId = parseInt(splits[2], 36);
     location.sourceMessageId = parseInt(splits[3], 36);
     checkBoxIdx = parseInt(splits[4], 36);
@@ -385,13 +388,13 @@ const replyWithChecklist = async (
       const checklistText = formatCheckBoxLinesNoHtml(checklistData);
       return await ctx.api.sendMessage(
         location.foreignChatId,
-        'You must start the bot for it to work in a group with protected content!\n' +
-          '<i>📋 Use the text below to recreate your checklist</i>:\n\n' +
+        `${ctx.t('you-must-start-for-protected-content')}!\n` +
+          `<i>📋 ${ctx.t('use-text-to-recreate-checklist')}</i>:\n\n` +
           `<code>${escapeHtml(checklistText)}</code>`,
         ik([
           [
             {
-              text: '🤖 Click here to start the bot',
+              text: `🤖 ${ctx.t('click-here-to-start')}`,
               url: `https://t.me/${ctx.me.username}`,
             },
           ],
@@ -399,7 +402,7 @@ const replyWithChecklist = async (
       );
     }
 
-    return await ctx.reply('There was an error creating the checklist');
+    return await ctx.reply(ctx.t('error-creating-checklist'));
   }
 };
 
@@ -484,25 +487,39 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
   }
   const checklistData = getInlineQueryCheckBoxes(ctx);
 
+  const keyboard = [
+    [
+      {
+        text: `💭 ${ctx.t('generating-links')}... 🔗`,
+        url: `tg://user?id=${ctx.me.id}`,
+      },
+    ],
+  ];
+
   return await ctx.answerInlineQuery(
     [
       {
-        id: 'checklist',
+        id: 'checklist-shared',
         type: 'article',
         input_message_content: {
           message_text: formatCheckBoxLines(checklistData, () => ''),
           parse_mode: 'HTML',
           disable_web_page_preview: true,
         },
-        ...ik([
-          [
-            {
-              text: '💭 Generating links... 🔗',
-              url: `tg://user?id=${ctx.me.id}`,
-            },
-          ],
-        ]),
-        title: 'Send checklist',
+        ...ik(keyboard),
+        title: ctx.t('shared-checklist'),
+        description: formatCheckBoxLinesNoHtml(checklistData),
+      },
+      {
+        id: 'checklist-personal',
+        type: 'article',
+        input_message_content: {
+          message_text: formatCheckBoxLines(checklistData, () => ''),
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        },
+        ...ik(keyboard),
+        title: ctx.t('personal-checklist'),
         description: formatCheckBoxLinesNoHtml(checklistData),
       },
     ],
@@ -513,19 +530,9 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
   );
 });
 
-// function makeInlineMessageHash(location: ChecklistMessageLocation) {
-//   const { sourceChatId, sourceMessageId, inlineMessageId } = location;
-//   const messageKey = `${sourceChatId}:${sourceMessageId}:${inlineMessageId}`;
-//   return crypto
-//     .createHash('sha256')
-//     .update(messageKey, 'utf8')
-//     .digest()
-//     .toString('hex');
-// }
-
 // deal with a chosen inline query
 checkListModule.on('chosen_inline_result').filter(
-  (ctx) => ctx.chosenInlineResult.result_id === 'checklist',
+  (ctx) => ctx.chosenInlineResult.result_id.startsWith('checklist'),
   async (ctx) => {
     const checklistData = getInlineQueryCheckBoxes(ctx);
     const inlineMessageId = ctx.chosenInlineResult.inline_message_id;
@@ -533,28 +540,27 @@ checkListModule.on('chosen_inline_result').filter(
       return console.error('Failed to get inline message id', ctx);
     }
 
-    // let location: ChecklistMessageLocation;
     let checklistText: string;
     try {
       const res = await sendChecklist(ctx, checklistData, {
         sourceChatId: ctx.from.id,
         inlineMessageId: inlineMessageId,
         salt: makeId(3),
+        isPersonal: ctx.chosenInlineResult.result_id === 'checklist-personal',
       });
-      // location = res.completeLocation;
       checklistText = res.checklistText;
     } catch (error) {
       if (error instanceof GrammyError && error.error_code == 403) {
         checklistText = formatCheckBoxLinesNoHtml(checklistData);
         return await ctx.api.editMessageTextInline(
           inlineMessageId,
-          'You must start the bot for it to work in inline mode!\n' +
-            '<i>📋 Use the text below to recreate your checklist</i>:\n\n' +
+          `${ctx.t('you-must-start-for-inline-mode')}!\n` +
+            `<i>📋 ${ctx.t('use-text-to-recreate-checklist')}</i>:\n\n` +
             `<code>${escapeHtml(checklistText)}</code>`,
           ik([
             [
               {
-                text: '🤖 Click here to start the bot',
+                text: `🤖 ${ctx.t('click-here-to-start')}`,
                 url: `https://t.me/${ctx.me.username}`,
               },
             ],
@@ -563,7 +569,7 @@ checkListModule.on('chosen_inline_result').filter(
       }
       return await ctx.api.editMessageTextInline(
         inlineMessageId,
-        'There was an error creating the checklist'
+        ctx.t('error-creating-checklist')
       );
     }
 
@@ -596,27 +602,25 @@ async function checkChecklistPermissions(
     // #TODO: make list of allowed statuses configurable
     const allowedStatuses = ['creator', 'administrator', 'member'];
     if (allowedStatuses.indexOf(chatMemberStatus) === -1) {
-      throw new TgError(
-        `You do not have the rights to edit this checklist (maybe you're an anonymous admin, ` +
-          `maybe the bot has no access to the members of the chat, make the bot administrator to fix this)`
-      );
+      throw new TgError(ctx.t('no-rights-to-edit-group-checklist'));
     }
 
     if (chatMemberStatus === 'member') {
       const chatType = (await ctx.api.getChat(chatToCheck)).type;
       if (chatType === 'channel') {
-        throw new TgError(
-          'You are not administrator in this channel and cannot edit the checklist'
-        );
+        throw new TgError(ctx.t('you-are-not-administrator'));
       }
     }
   } else if (chatToCheck !== ctx.from.id) {
     // If this is an inline message we need to check the hash
     if (!inlineMessageId) {
-      throw new TgError('You do not have the rights to edit this checklist');
+      throw new TgError(ctx.t('no-rights-to-edit-checklist'));
     }
     // An inline message can be changed by anyone who has access to it
     // At this point the signature challenge has already been passed
+    if (location.isPersonal) {
+      throw new TgError(ctx.t('checklist-is-personal'));
+    }
   }
 }
 
@@ -643,15 +647,17 @@ async function getChecklistMessage(
   } catch (error) {
     if (error instanceof GrammyError) {
       throw new TgError(
-        `Failed to read checklist contents due to error: <code>${error.message}</code>`
+        `${ctx.t('failed-to-read-checklist-error')}: <code>${
+          error.message
+        }</code>`
       );
     }
     console.error('Failed to read checklist', error);
-    throw new TgError('Failed to read checklist contents due to unknown error');
+    throw new TgError(ctx.t('failed-to-read-checklist-unknown'));
   }
 
   if (!checklistMessage.text) {
-    throw new TgError('Failed to read checklist contents');
+    throw new TgError(ctx.t('failed-to-read-checklist'));
   }
 
   return {

@@ -54,6 +54,26 @@ add-to-group = Aggiungimi ad un gruppo 👥
 info = Info ℹ️
 use-inline = Modalità mode ↩️
 
+generating-links = Genero i link
+shared-checklist = Checklist condivisa
+personal-checklist = Checklist personale
+you-must-start-for-inline-mode = Devi avviare il bot perché possa funzionare in modalità inline
+use-text-to-recreate-checklist = Puoi usare il testo qua sotto per ricreare la tua checklist
+you-must-start-for-protected-content = Devi avviare il bot perché possa funzionare in in gruppo con contenuti protetti
+
+click-here-to-start = Clicca qui per avviare il bot
+error-creating-checklist = C'è stato un errore nel creare la checklist
+
+no-rights-to-edit-group-checklist =
+    Non hai i permessi per modificare questa checklist (magari sei un amministratore anonimo, magari il bot non ha accesso alla lista degli membri della chat, rendi il bot amministratore per risolvere)
+you-are-not-administrator = Non sei amministratore di questo canale e non puoi modificare le checklist
+no-rights-to-edit-checklist = Non hai i permessi per modificare questa checklist
+checklist-is-personal = Questa checklist è personale e solo l'autor{-schwa} può modificarla, usa una checklist condivisa per permettere a tutt{-schwa} di modificarla
+
+failed-to-read-checklist-error = Non sono riuscito a leggere i contenuti della checklist per un errore
+failed-to-read-checklist-unknown = Non sono riuscito a leggere i contenuti della checklist per un errore ignoto
+failed-to-read-checklist = Non sono riuscito a leggere i contenuti della checklist
+
 info-message =
     🧑‍💻 Sviluppatore: @rayz1065
     🗃 Codice sorgente: github.com/rayz1065/checkbot
