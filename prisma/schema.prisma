@@ -11,28 +11,28 @@ datasource db {
 }
 
 model Session {
-  id    Int    @id @default(autoincrement())
+  id    BigInt @id @default(autoincrement())
   key   String @unique
   value String
 }
 
 model User {
-  id               Int         @id @default(autoincrement())
-  telegram_chat_id Int         @unique
+  id               BigInt      @id @default(autoincrement())
+  telegram_chat_id BigInt      @unique
   first_name       String
   last_name        String?
   username         String?
   created_at       DateTime    @default(now())
   language         String?
-  invited_by_id    Int?
+  invited_by_id    BigInt?
   invited_by       User?       @relation("invites", fields: [invited_by_id], references: [id])
   invited_users    User[]      @relation("invites")
   config           UserConfig?
 }
 
 model UserConfig {
-  id                     Int     @id @default(autoincrement())
-  user_id                Int     @unique
+  id                     BigInt  @id @default(autoincrement())
+  user_id                BigInt  @unique
   default_checked_box    String
   default_unchecked_box  String
   show_edit_confirmation Boolean @default(true)
