@@ -6,6 +6,7 @@ import {
 } from 'grammy/types';
 import { emoji } from 'node-emoji';
 import { MyContext, MyConversation } from '../main';
+import { TranslationContext } from '@grammyjs/i18n/types/src/deps';
 
 export interface TgMessageData {
   text: string;
@@ -77,11 +78,23 @@ export function cbValidate<T extends any[]>(
   };
 }
 
+/**
+ * Resulting array will have at most "limit" elements
+ */
+function splitWithTail(str: string, separator: string, limit: number) {
+  const parts = str.split(separator);
+  const tail = parts.slice(limit - 1).join(separator);
+  const result = parts.slice(0, limit - 1);
+  result.push(tail);
+
+  return result;
+}
+
 export function findTgCallback(
   callbacks: TgCallback<any>[],
   cbData: string
 ): { match: TgCallback | null; values: any[] } {
-  const sections = cbData.split('.', 3);
+  const sections = splitWithTail(cbData, '.', 3);
   if (sections.length !== 3) {
     return { match: null, values: [] };
   }
@@ -113,7 +126,17 @@ export function tgCallbackMiddleware(callbacks: TgCallback<any>[]) {
 /**
  * An error to be displayed to the user
  */
-export class TgError extends Error {}
+export class TgError extends Error {
+  public context?: TranslationContext;
+
+  public constructor(
+    message: string,
+    context?: TranslationContext | undefined
+  ) {
+    super(message);
+    this.context = context;
+  }
+}
 
 export function makeId(length: number) {
   const res = [];

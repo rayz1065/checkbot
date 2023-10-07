@@ -2,10 +2,15 @@
 -bot-creator = @rayz1065
 -bot-github = https://github.com/rayz1065/checkbot/
 
-cancel = Cancel {$emoji-cancel}
-back = Back {$emoji-back}
-back-to-menu = Back to menu {$emoji-back}
-confirm = Confirm {$emoji-confirm}
+# base
+
+-emoji-cancel = ❌
+-emoji-back = 🔙
+-emoji-confirm = ✅
+cancel = Cancel {-emoji-cancel}
+back = Back {-emoji-back}
+back-to-menu = Back to menu {-emoji-back}
+confirm = Confirm {-emoji-confirm}
 no-operation-running = No operation is running...
 write-cancel-to-cancel-operation = Write /cancel to cancel operation
 

@@ -3,10 +3,15 @@
 -bot-github = https://github.com/rayz1065/checkbot/
 -schwa = ə
 
-cancel = Annulla {$emoji-cancel}
-back = Indietro {$emoji-back}
-back-to-menu = Torna al menù {$emoji-back}
-confirm = Conferma {$emoji-confirm}
+# base
+
+-emoji-cancel = ❌
+-emoji-back = 🔙
+-emoji-confirm = ✅
+cancel = Annulla {-emoji-cancel}
+back = Indietro {-emoji-back}
+back-to-menu = Torna al menù {-emoji-back}
+confirm = Conferma {-emoji-confirm}
 no-operation-running = Nessuna operazione in corso...
 write-cancel-to-cancel-operation = Scrivi /cancel per annullare
 

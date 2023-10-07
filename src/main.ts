@@ -1,6 +1,5 @@
 import * as dotenv from 'dotenv';
 import { Bot, Context, session, SessionFlavor } from 'grammy';
-import { sequentialize } from 'grammy-middlewares';
 import { hydrateReply, parseMode, ParseModeFlavor } from '@grammyjs/parse-mode';
 import {
   Conversation,
@@ -45,13 +44,13 @@ export type MyConversation = Conversation<MyContext>;
 export const i18n = new I18n<MyContext>({
   defaultLocale: process.env.DEFAULT_LOCALE ?? 'en',
   directory: path.join(__dirname, 'i18n'),
+  fluentBundleOptions: {
+    useIsolating: false,
+  },
   localeNegotiator: (ctx) =>
     ctx.dbUser?.language ?? ctx.from?.language_code ?? 'en',
   globalTranslationContext(ctx) {
     return {
-      'emoji-cancel': emoji.x,
-      'emoji-back': emoji.back,
-      'emoji-confirm': emoji.white_check_mark,
       'user-name': escapeHtml(ctx.from?.first_name ?? ''),
       'bot-name': ctx.me.username,
     };
@@ -61,7 +60,6 @@ export const i18n = new I18n<MyContext>({
 // set up db connection and base bot configuration
 export const prisma = new PrismaClient();
 export const bot = new Bot<MyContext>(process.env.BOT_TOKEN);
-bot.use(sequentialize());
 bot.use(hydrateReply);
 bot.api.config.use(parseMode('HTML'));
 bot.use(

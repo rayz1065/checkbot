@@ -19,7 +19,7 @@ There are a couple of workarounds to make all of the settings indicated above wo
 
 ## Setup and run
 
-You will need a bot API token, get one by contacting [BotFather](https://t.me/botfather), after that create a .env file by copying the .env.example, be sure to change the `CHECKBOX_HMAC_SECRET` with a random string, `POSTGRES_PW` with a secure password, and `BOT_TOKEN` with the token you received from BotFather.
+You will need a bot API token, get one by contacting [BotFather](https://t.me/botfather), after that create a .env file by copying the .env.example, be sure to change the `CHECKBOX_HMAC_SECRET` with a random string, `POSTGRES_PASSWORD` with a secure password, and `BOT_TOKEN` with the token you received from BotFather.
 
 Copy or link the configuration you want to use to `docker-compose.override.yml`.
 To use the bot in development mode write:
