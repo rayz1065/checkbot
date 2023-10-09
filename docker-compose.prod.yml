@@ -1,3 +1,32 @@
+# This file serves as an example of a production environment,
+# you can copy it as docker-compose.override.yml and customise
+# it to your needs
 services:
   app:
     command: npx ts-node /usr/src/app/src/bin/run.ts
+    labels:
+      - traefik.enable=true
+
+      - "traefik.http.services.checkbot-api.loadbalancer.server.port=3000"
+      - "traefik.http.routers.checkbot-api.rule=Host(`${WEB_APP_URL}`) && PathPrefix(`/api`)"
+      - "traefik.http.middlewares.checkbot-api.stripprefix.prefixes=/api"
+      - "traefik.http.middlewares.checkbot-api.stripprefix.forceSlash=false"
+      - "traefik.http.routers.checkbot-api.service=checkbot-api"
+      - "traefik.http.routers.checkbot-api.middlewares=checkbot-api@docker"
+    networks:
+      - traefik
+
+  web:
+    command: yarn start
+    labels:
+      - traefik.enable=true
+
+      - traefik.http.services.checkbot.loadbalancer.server.port=3000
+      - traefik.http.routers.checkbot.rule=Host(`${WEB_APP_URL}`)
+      - traefik.http.routers.checkbot.service=checkbot
+    networks:
+      - traefik
+
+networks:
+  traefik:
+    external: true

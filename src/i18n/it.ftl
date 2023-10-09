@@ -14,6 +14,7 @@ back-to-menu = Torna al menù {-emoji-back}
 confirm = Conferma {-emoji-confirm}
 no-operation-running = Nessuna operazione in corso...
 write-cancel-to-cancel-operation = Scrivi /cancel per annullare
+unknown-error = Errore sconosciuto
 
 share = Condividi
 enter-bot = Entra in {$bot-name}
@@ -75,7 +76,7 @@ you-are-not-administrator = Non sei amministratore di questo canale e non puoi m
 no-rights-to-edit-checklist = Non hai i permessi per modificare questa checklist
 checklist-is-personal = Questa checklist è personale e solo l'autor{-schwa} può modificarla, usa una checklist condivisa per permettere a tutt{-schwa} di modificarla
 
-failed-to-read-checklist-error = Non sono riuscito a leggere i contenuti della checklist per un errore
+failed-to-read-checklist-error = Non sono riuscito a leggere i contenuti della checklist per un errore: <code>{$message}</code>
 failed-to-read-checklist-unknown = Non sono riuscito a leggere i contenuti della checklist per un errore ignoto
 failed-to-read-checklist = Non sono riuscito a leggere i contenuti della checklist
 

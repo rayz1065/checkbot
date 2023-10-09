@@ -1,8 +1,16 @@
 import { bot, prisma } from '../main';
+import { server } from '../server/server';
+
+const port = 3000;
 
 async function main() {
   console.log('Bot running...');
-  await bot.start();
+  await Promise.all([
+    bot.start(),
+    server.listen(port, () => {
+      console.log(`Api listening on port ${port}`);
+    }),
+  ]);
 }
 
 main()
