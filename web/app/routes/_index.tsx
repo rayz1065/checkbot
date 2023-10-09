@@ -7,10 +7,12 @@ import {
   Loader,
   ScrollArea,
   SimpleGrid,
+  Skeleton,
   Text,
 } from '@mantine/core';
 import type { MetaFunction } from '@remix-run/node';
 import { useSearchParams } from '@remix-run/react';
+import { MainButton } from '@vkruglikov/react-telegram-web-app';
 import { useEffect, useState } from 'react';
 
 export const meta: MetaFunction = () => {
@@ -47,34 +49,62 @@ export default function Index() {
     code: 'ok',
     text: 'idle',
   });
+  const [failedContacting, setFailedContacting] = useState(false);
 
-  useEffect(() => {
-    const fetchMessage = async (initData: string) => {
-      // loads the checklist from telegram through the api
-      const res = await fetch(`https://${window.ENV.WEB_APP_API_URL}/message`, {
-        body: JSON.stringify({
-          initData,
-          location,
-        }),
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+  const fetchMessage = async (initData: string) => {
+    // loads the checklist from telegram through the api
+    setStatus({
+      code: 'loading',
+      text: 'The checklist is being loaded',
+    });
+
+    const res = await fetch(`https://${window.ENV.WEB_APP_API_URL}/message`, {
+      body: JSON.stringify({
+        initData,
+        location,
+      }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const { ok, result, description } = await res.json();
+    if (!ok) {
+      setStatus({
+        code: 'error',
+        text: description,
       });
-      const { ok, result, description } = await res.json();
-      if (!ok) {
+      return;
+    }
+
+    setStatus({
+      code: 'ok',
+      text: 'Checklist loaded',
+    });
+    setCheckListLines(result);
+  };
+
+  function requestWriteAccessAndFetchMessage(webApp: WebApp) {
+    if (!webApp) return;
+    setFailedContacting(false);
+    webApp.requestWriteAccess((success) => {
+      if (success) {
+        fetchMessage(webApp.initData);
+      } else {
+        setFailedContacting(true);
         setStatus({
           code: 'error',
-          text: description,
+          text: 'The bot requires to contact you to work',
         });
-        return;
       }
-      setCheckListLines(result);
-    };
+    });
+  }
 
+  useEffect(() => {
     if (webApp === null && window.Telegram.WebApp) {
-      setWebApp(window.Telegram.WebApp);
+      const webApp = window.Telegram.WebApp;
+      setWebApp(webApp);
       if (checkListLines.length === 0) {
         // lines were not passed from the url, they must be fetched from the api
-        fetchMessage(window.Telegram.WebApp.initData);
+        requestWriteAccessAndFetchMessage(webApp);
       }
     }
   });
@@ -167,7 +197,15 @@ export default function Index() {
         h="100%"
       >
         <ScrollArea h="var(--tg-viewport-stable-height)">
-          {checkListLines.map(renderLine)}
+          {checkListLines.length === 0 && status.code === 'loading' ? (
+            <>
+              <Skeleton height={20} radius="lg" />
+              <Skeleton height={20} mt={10} radius="lg" />
+              <Skeleton height={20} mt={10} width="70%" radius="lg" />
+            </>
+          ) : (
+            checkListLines.map(renderLine)
+          )}
         </ScrollArea>
         <SimpleGrid cols={2} mt="md">
           <Button
@@ -211,6 +249,12 @@ export default function Index() {
           {status.code === 'loading' && <Loader size={6} />}
         </Text>
       </Card>
+      {failedContacting && (
+        <MainButton
+          text="Allow contacting"
+          onClick={() => requestWriteAccessAndFetchMessage(webApp)}
+        />
+      )}
     </Container>
   );
 }
