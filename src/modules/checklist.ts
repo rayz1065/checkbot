@@ -11,9 +11,11 @@ import crypto from 'crypto';
 import assert from 'assert';
 import {
   decodeDeepLinkParams,
+  deepLinkUrl,
   encodeDeepLinkParams,
   encodeDeepLinkUrl,
   encodeStartAppUrl,
+  startAppUrl,
 } from '../lib/deep-linking';
 import base from 'base-x';
 import { getEmptyConfig, setShowEditConfirmation } from './check-config';
@@ -336,21 +338,20 @@ export function parseLocationIdentifier(splits: string[]) {
 /**
  * Used in private chats, groups, and inline mode
  */
-async function sendChecklist(
-  ctx: MyContext,
-  checklistData: ChecklistData,
-  location: Omit<ChecklistMessageLocation, 'sourceMessageId'>
+export async function sendChecklist(
+  api: Api,
+  me: UserFromGetMe,
+  location: Omit<ChecklistMessageLocation, 'sourceMessageId'>,
+  checklistData: ChecklistData
 ) {
   const normalizedText = formatCheckBoxLines(
     checklistData,
     () => '' // no URL is available yet
   );
   const { sourceChatId, foreignChatId } = location;
-  const checklistMessage = await ctx.api.sendMessage(
-    sourceChatId,
-    normalizedText,
-    { disable_web_page_preview: true }
-  );
+  const checklistMessage = await api.sendMessage(sourceChatId, normalizedText, {
+    disable_web_page_preview: true,
+  });
   const sourceMessageId = checklistMessage.message_id;
   const completeLocation: ChecklistMessageLocation = {
     ...location,
@@ -359,7 +360,7 @@ async function sendChecklist(
 
   if (foreignChatId) {
     // get a foreignMessageId
-    const foreignChecklistMessage = await ctx.api.sendMessage(
+    const foreignChecklistMessage = await api.sendMessage(
       foreignChatId,
       normalizedText,
       { disable_web_page_preview: true }
@@ -368,14 +369,38 @@ async function sendChecklist(
   }
 
   // edit the message now that the URL is available
-  await updateChecklistMessage(
-    ctx.api,
-    ctx.me,
-    completeLocation,
-    checklistData
-  );
+  await updateChecklistMessage(api, me, completeLocation, checklistData);
 
   return { completeLocation, checklistData };
+}
+
+function createChecklistAppButton(
+  ctx: MyContext,
+  location: Omit<ChecklistMessageLocation, 'sourceMessageId'>,
+  checklistData: ChecklistData
+) {
+  const appData = JSON.stringify({
+    location: encodeDeepLinkParams(
+      getLocationIdentifier({ ...location, sourceMessageId: 0 })
+    ),
+    list: checklistData,
+  });
+  // TODO: a better encoding may allow for longer messages to be used here
+  // for example just the location and text of the checklist can be passed
+  const startApp = Buffer.from(appData).toString('base64url');
+
+  if (startApp.length < 512) {
+    return InlineKeyboard.url(
+      `🤖 ${ctx.t('click-here-to-create-checklist')}`,
+      startAppUrl(ctx.me, 'create_checklist', startApp)
+    );
+  }
+
+  // url is too long, default to a url to start the bot
+  return InlineKeyboard.url(
+    `🤖 ${ctx.t('click-here-to-start')}`,
+    deepLinkUrl(ctx.me, '')
+  );
 }
 
 const replyWithChecklist = async (
@@ -406,7 +431,7 @@ const replyWithChecklist = async (
     ctx.dbUser.config
   );
   try {
-    await sendChecklist(ctx, checklistData, location);
+    await sendChecklist(ctx.api, ctx.me, location, checklistData);
   } catch (error) {
     if (
       location.foreignChatId &&
@@ -419,14 +444,7 @@ const replyWithChecklist = async (
         `${ctx.t('you-must-start-for-protected-content')}!\n` +
           `<i>📋 ${ctx.t('use-text-to-recreate-checklist')}</i>:\n\n` +
           `<code>${escapeHtml(checklistText)}</code>`,
-        ik([
-          [
-            {
-              text: `🤖 ${ctx.t('click-here-to-start')}`,
-              url: `https://t.me/${ctx.me.username}`,
-            },
-          ],
-        ])
+        ik([[createChecklistAppButton(ctx, location, checklistData)]])
       );
     }
 
@@ -573,13 +591,14 @@ checkListModule.on('chosen_inline_result').filter(
       return console.error('Failed to get inline message id', ctx);
     }
 
+    const location = {
+      sourceChatId: ctx.from.id,
+      inlineMessageId: inlineMessageId,
+      salt: makeId(3),
+      isPersonal: ctx.chosenInlineResult.result_id === 'checklist-personal',
+    };
     try {
-      await sendChecklist(ctx, checklistData, {
-        sourceChatId: ctx.from.id,
-        inlineMessageId: inlineMessageId,
-        salt: makeId(3),
-        isPersonal: ctx.chosenInlineResult.result_id === 'checklist-personal',
-      });
+      await sendChecklist(ctx.api, ctx.me, location, checklistData);
     } catch (error) {
       if (error instanceof GrammyError && error.error_code == 403) {
         const checklistText = formatCheckBoxLinesNoHtml(checklistData);
@@ -588,14 +607,7 @@ checkListModule.on('chosen_inline_result').filter(
           `${ctx.t('you-must-start-for-inline-mode')}!\n` +
             `<i>📋 ${ctx.t('use-text-to-recreate-checklist')}</i>:\n\n` +
             `<code>${escapeHtml(checklistText)}</code>`,
-          ik([
-            [
-              {
-                text: `🤖 ${ctx.t('click-here-to-start')}`,
-                url: `https://t.me/${ctx.me.username}`,
-              },
-            ],
-          ])
+          ik([[createChecklistAppButton(ctx, location, checklistData)]])
         );
       }
       return await ctx.api.editMessageTextInline(
@@ -603,10 +615,6 @@ checkListModule.on('chosen_inline_result').filter(
         ctx.t('error-creating-checklist')
       );
     }
-
-    // await ctx.api.editMessageTextInline(inlineMessageId, checklistText, {
-    //   disable_web_page_preview: true,
-    // });
   }
 );
 

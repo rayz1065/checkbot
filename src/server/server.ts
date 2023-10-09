@@ -14,6 +14,7 @@ import {
   configExtractCheckboxes,
   getChecklistMessageText,
   parseLocationIdentifier,
+  sendChecklist,
   updateChecklistMessage,
 } from '../modules/checklist';
 import { Api } from 'grammy';
@@ -127,7 +128,6 @@ router.post(
         req.body.dbUser.config
       );
     } catch (error) {
-      console.error({ error });
       const prettyError =
         error instanceof TgError
           ? req.body.t(error.message, error.context)
@@ -172,6 +172,51 @@ router.post(
     const me = await api.getMe(); // TODO cache the result
     const config: UserConfig = req.body.dbUser.config ?? getEmptyConfig();
     await updateChecklistMessage(api, me, location, {
+      checkedBoxStyle: config.default_checked_box,
+      uncheckedBoxStyle: config.default_unchecked_box,
+      hasCheckBoxes: true,
+      lines: body.checklistLines,
+    });
+
+    res.json({ ok: true });
+  }
+);
+
+router.post(
+  '/create-message',
+  body('location').notEmpty(),
+  body('checklistLines').notEmpty(),
+  ensureValid,
+  async (req, res) => {
+    const body: {
+      initData: WebAppInitData;
+      location: string;
+      checklistLines: CheckBoxLine[]; // TODO: validate lines
+    } = req.body;
+
+    const api = new Api(process.env.BOT_TOKEN!);
+    const { initData } = body;
+    const location = parseLocationIdentifier(
+      decodeDeepLinkParams(body.location)
+    );
+    try {
+      if (location.sourceMessageId !== 0) {
+        throw new TgError('error-creating-checklist');
+      }
+      await checkChecklistPermissions(api, initData.user!.id, location);
+    } catch (error) {
+      const prettyError =
+        error instanceof TgError
+          ? req.body.t(error.message, error.context)
+          : req.body.t('unknown-error');
+      res.statusCode = 400;
+      return res.json({ ok: false, description: prettyError });
+    }
+
+    // create the checklist
+    const me = await api.getMe(); // TODO cache the result
+    const config: UserConfig = req.body.dbUser.config ?? getEmptyConfig();
+    await sendChecklist(api, me, location, {
       checkedBoxStyle: config.default_checked_box,
       uncheckedBoxStyle: config.default_unchecked_box,
       hasCheckBoxes: true,

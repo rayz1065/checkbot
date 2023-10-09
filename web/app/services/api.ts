@@ -56,3 +56,11 @@ export function updateChecklistMessage(data: {
 }) {
   return apiPost('update-message', data);
 }
+
+export function createChecklistMessage(data: {
+  initData: string;
+  location: string;
+  checklistLines: CheckBoxLine[];
+}) {
+  return apiPost('create-message', data);
+}

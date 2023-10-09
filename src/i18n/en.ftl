@@ -67,6 +67,7 @@ use-text-to-recreate-checklist = Use the text below to recreate your checklist
 you-must-start-for-protected-content = You must start the bot for it to work in a group with protected content
 
 click-here-to-start = Click here to start the bot
+click-here-to-create-checklist = Click here to create the checklist
 error-creating-checklist = There was an error creating the checklist
 
 no-rights-to-edit-group-checklist =
