@@ -51,14 +51,17 @@ export default function Index() {
   useEffect(() => {
     const fetchMessage = async (initData: string) => {
       // loads the checklist from telegram through the api
-      const res = await fetch('https://check.rayzdev.me/api/message', {
-        body: JSON.stringify({
-          initData,
-          location,
-        }),
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const res = await fetch(
+        `https://${window.ENV.WEB_APP_API_URL}/api/message`,
+        {
+          body: JSON.stringify({
+            initData,
+            location,
+          }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
       const { ok, result, description } = await res.json();
       if (!ok) {
         setStatus({

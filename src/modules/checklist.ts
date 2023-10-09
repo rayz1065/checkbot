@@ -813,7 +813,9 @@ export async function updateChecklistMessage(
           ? [
               InlineKeyboard.webApp(
                 '✏️',
-                `https://check.rayzdev.me/?tgWebAppStartParam=${encodeDeepLinkParams(
+                `https://${
+                  process.env.WEB_APP_URL
+                }/?tgWebAppStartParam=${encodeDeepLinkParams(
                   getLocationIdentifier(location)
                 )}&list=${encodeURIComponent(JSON.stringify(checklistData))}`
               ),

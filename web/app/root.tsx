@@ -1,5 +1,5 @@
 import { cssBundleHref } from '@remix-run/css-bundle';
-import type { LinksFunction } from '@remix-run/node';
+import { json, type LinksFunction } from '@remix-run/node';
 import {
   Links,
   LiveReload,
@@ -7,6 +7,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLoaderData,
 } from '@remix-run/react';
 import {
   MantineProvider,
@@ -24,7 +25,16 @@ export const links: LinksFunction = () => [
   { rel: 'stylesheet', href: styles },
 ];
 
+export async function loader() {
+  return json({
+    ENV: {
+      WEB_APP_API_URL: process.env.WEB_APP_API_URL,
+    },
+  });
+}
+
 export default function App() {
+  const envVariablesData = useLoaderData<typeof loader>();
   const [extraColors, setExtraColors] = useState<
     Record<string, MantineColorsTuple>
   >({
@@ -73,6 +83,11 @@ export default function App() {
         >
           <Outlet />
           <ScrollRestoration />
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `window.ENV = ${JSON.stringify(envVariablesData.ENV)}`,
+            }}
+          />
           <Scripts />
           <LiveReload />
         </MantineProvider>
