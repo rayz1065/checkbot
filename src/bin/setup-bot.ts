@@ -145,6 +145,7 @@ function furtherSetup() {
     'Toggle inline mode on',
     'Edit the inline placeholder',
     'Turn inline feedback to 100%',
+    'Create a webapp on @botfather by using /newapp, use the short name edit_checklist',
   ];
 
   return (

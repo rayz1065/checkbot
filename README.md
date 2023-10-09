@@ -17,9 +17,24 @@ Before allowing the user to update a checklist a series of verifications are don
 
 There are a couple of workarounds to make all of the settings indicated above work, like using the private chat of the user to store a checklist in a group with protected content.
 
+## Infrastructure
+
+The bot and web app are made to run inside [docker](https://www.docker.com/), both during development and deployment.
+The `src` directory contains the code for the bot server:
+
+- The bot itself, written using the [GrammyJs](https://grammy.dev/) framework
+- The api, required by the webapp to interface with the bot's logic, written using the [ExpressJs](https://expressjs.com/) framework
+
+The `web` directory contains the webapp, which can be used to more quickly edit checklists in any chat. It is built in [Remix](https://remix.run/), a web framework based on react.
+
+The database, which is used to store basic user data, such as the configs, uses [postgres](https://www.postgresql.org/) and is managed through [prisma](https://www.prisma.io/).
+
+A suggested method for deployment is present in `docker-compose.prod.yml`, which shows how [traefik](https://traefik.io/) can be used as a reverse proxy for the various services.
+
 ## Setup and run
 
 You will need a bot API token, get one by contacting [BotFather](https://t.me/botfather), after that create a .env file by copying the .env.example, be sure to change the `CHECKBOX_HMAC_SECRET` with a random string, `POSTGRES_PASSWORD` with a secure password, and `BOT_TOKEN` with the token you received from BotFather.
+In order to run the web app, you will need to set the `WEB_APP_URL` to the website where the web app is hosted, and `WEB_APP_API_URL` to the url where the express server with the api is hosted.
 
 Copy or link the configuration you want to use to `docker-compose.override.yml`.
 To use the bot in development mode write:

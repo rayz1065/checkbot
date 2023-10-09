@@ -5,7 +5,7 @@ WORKDIR /usr/src/app
 COPY package.json package.json
 COPY yarn.lock yarn.lock
 
-RUN yarn install
+RUN yarn install && yarn cache clean
 
 COPY . .
 
