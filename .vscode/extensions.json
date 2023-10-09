@@ -5,6 +5,7 @@
     "ms-azuretools.vscode-docker",
     "prisma.prisma",
     "esbenp.prettier-vscode",
-    "macabeus.vscode-fluent"
+    "macabeus.vscode-fluent",
+    "streetsidesoftware.code-spell-checker-italian"
   ]
 }

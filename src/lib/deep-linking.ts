@@ -31,10 +31,33 @@ export function decodeDeepLinkParams(encodedParams: string) {
 }
 
 /**
+ * Creates a deep-link url with the given start parameter
+ */
+export function deepLinkUrl(me: User, startParam: string) {
+  return `https://t.me/${me.username}?start=${startParam}`;
+}
+
+/**
  * Creates a deep-link url with encoded params
  */
 export function encodeDeepLinkUrl(me: User, params: (string | number)[]) {
-  const baseUrl = `https://t.me/${me.username}`;
-  const encodedParams = encodeDeepLinkParams(params);
-  return `${baseUrl}?start=${encodedParams}`;
+  return deepLinkUrl(me, encodeDeepLinkParams(params));
+}
+
+/**
+ * Creates a start-app url with the given start parameter
+ */
+export function startAppUrl(me: User, appName: string, startParam: string) {
+  return `https://t.me/${me.username}/${appName}?startapp=${startParam}`;
+}
+
+/**
+ * Creates a start-app url with the encoded params
+ */
+export function encodeStartAppUrl(
+  me: User,
+  appName: string,
+  params: (string | number)[]
+) {
+  return startAppUrl(me, appName, encodeDeepLinkParams(params));
 }
