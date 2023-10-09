@@ -51,7 +51,7 @@ export default function Index() {
   });
   const [failedContacting, setFailedContacting] = useState(false);
 
-  const fetchMessage = async (initData: string) => {
+  async function fetchMessage(initData: string) {
     // loads the checklist from telegram through the api
     setStatus({
       code: 'loading',
@@ -80,10 +80,9 @@ export default function Index() {
       text: 'Checklist loaded',
     });
     setCheckListLines(result);
-  };
+  }
 
   function requestWriteAccessAndFetchMessage(webApp: WebApp) {
-    if (!webApp) return;
     setFailedContacting(false);
     webApp.requestWriteAccess((success) => {
       if (success) {
