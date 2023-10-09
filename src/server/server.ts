@@ -9,8 +9,9 @@ import crypto from 'crypto';
 import querystring from 'node:querystring';
 import {
   CheckBoxLine,
+  ChecklistData,
   checkChecklistPermissions,
-  extractCheckboxes,
+  configExtractCheckboxes,
   getChecklistMessageText,
   parseLocationIdentifier,
   updateChecklistMessage,
@@ -18,6 +19,11 @@ import {
 import { Api } from 'grammy';
 import { decodeDeepLinkParams } from '../lib/deep-linking';
 import { body, validationResult } from 'express-validator';
+import { upsertDbUser } from '../middlewares/authenticate';
+import { i18n } from '../main';
+import { TgError } from '../lib/utils';
+import { getEmptyConfig } from '../modules/check-config';
+import { UserConfig } from '@prisma/client';
 
 export const server = express();
 server.use(json());
@@ -66,22 +72,34 @@ function isRequestSafe(initDataString: string) {
   return actualHash === hash;
 }
 
-router.use((req, res, next) => {
+router.use(async (req, res, next) => {
   if (!isRequestSafe(req.body.initData)) {
     res.statusCode = 400;
     return res.json({ ok: false });
   }
 
-  const initData = querystring.decode(req.body.initData);
+  const decodedParams = querystring.decode(req.body.initData);
 
-  req.body.initData = initData;
-  if (initData.user) {
-    initData.user = JSON.parse(initData.user as string);
-  } else {
+  if (!decodedParams.user) {
     res.statusCode = 400;
     return res.json({ ok: false, description: 'User missing' });
   }
 
+  const initData = {
+    ...decodedParams,
+    user: JSON.parse(decodedParams.user as string),
+  } as WebAppInitData;
+
+  req.body.initData = initData;
+  const dbUser = await upsertDbUser(initData.user as WebAppUser);
+  req.body.dbUser = dbUser;
+  // TODO maybe this can use the negotiateLocale method declared in main
+  req.body.t = i18n.fluent.withLocale(
+    dbUser.language ??
+      initData.user?.language_code ??
+      process.env.DEFAULT_LOCALE ??
+      'en'
+  );
   next();
 });
 
@@ -100,15 +118,24 @@ router.post(
     const location = parseLocationIdentifier(
       decodeDeepLinkParams(body.location)
     );
+
+    let checklistData: ChecklistData;
     try {
       await checkChecklistPermissions(api, initData.user!.id, location);
+      checklistData = configExtractCheckboxes(
+        await getChecklistMessageText(api, initData.user!.id, location),
+        req.body.dbUser.config
+      );
     } catch (error) {
+      console.error({ error });
+      const prettyError =
+        error instanceof TgError
+          ? req.body.t(error.message, error.context)
+          : req.body.t('unknown-error');
       res.statusCode = 400;
-      return res.json({ ok: false });
+      return res.json({ ok: false, description: prettyError });
     }
-    const checklistData = extractCheckboxes(
-      await getChecklistMessageText(api, initData.user!.id, location)
-    );
+
     res.json({ ok: true, result: checklistData.lines });
   }
 );
@@ -133,18 +160,24 @@ router.post(
     try {
       await checkChecklistPermissions(api, initData.user!.id, location);
     } catch (error) {
+      const prettyError =
+        error instanceof TgError
+          ? req.body.t(error.message, error.context)
+          : req.body.t('unknown-error');
       res.statusCode = 400;
-      return res.json({ ok: false });
+      return res.json({ ok: false, description: prettyError });
     }
 
     // update the checklist
-    const me = await api.getMe();
+    const me = await api.getMe(); // TODO cache the result
+    const config: UserConfig = req.body.dbUser.config ?? getEmptyConfig();
     await updateChecklistMessage(api, me, location, {
-      checkedBoxStyle: '- [x]',
-      uncheckedBoxStyle: '- [ ]',
+      checkedBoxStyle: config.default_checked_box,
+      uncheckedBoxStyle: config.default_unchecked_box,
       hasCheckBoxes: true,
       lines: body.checklistLines,
     });
+
     res.json({ ok: true });
   }
 );

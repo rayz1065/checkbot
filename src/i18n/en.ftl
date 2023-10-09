@@ -13,6 +13,7 @@ back-to-menu = Back to menu {-emoji-back}
 confirm = Confirm {-emoji-confirm}
 no-operation-running = No operation is running...
 write-cancel-to-cancel-operation = Write /cancel to cancel operation
+unknown-error = Unknown error
 
 share = Share
 enter-bot = Join {$bot-name}
@@ -74,7 +75,7 @@ you-are-not-administrator = You are not administrator in this channel and cannot
 no-rights-to-edit-checklist = You do not have the rights to edit this checklist
 checklist-is-personal = This checklist is personal and only the author can edit it, use a shared checklist instead to allow anyone to edit it
 
-failed-to-read-checklist-error = Failed to read checklist contents due to error: <code>{message}</code>
+failed-to-read-checklist-error = Failed to read checklist contents due to error: <code>{$message}</code>
 failed-to-read-checklist-unknown = Failed to read checklist contents due to unknown error
 failed-to-read-checklist = Failed to read checklist contents
 

@@ -34,7 +34,7 @@ export type CheckBoxLine =
       text: string;
     };
 
-interface ChecklistData {
+export interface ChecklistData {
   hasCheckBoxes: boolean;
   lines: CheckBoxLine[];
   checkedBoxStyle: string;
@@ -172,7 +172,7 @@ export function extractCheckboxes(messageText: string) {
   };
 }
 
-function configExtractCheckboxes(
+export function configExtractCheckboxes(
   messageText: string,
   config: UserConfig | null
 ): ChecklistData {
