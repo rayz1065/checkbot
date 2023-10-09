@@ -14,25 +14,15 @@ import type { MetaFunction } from '@remix-run/node';
 import { useSearchParams } from '@remix-run/react';
 import { MainButton } from '@vkruglikov/react-telegram-web-app';
 import { useEffect, useState } from 'react';
+import { CheckBoxLine } from '../types/checklist';
+import { getChecklistMessage, updateChecklistMessage } from '../services/api';
 
 export const meta: MetaFunction = () => {
   return [
-    { title: 'CheckliBot app' },
-    { name: 'description', content: 'Create checklists on telegram' },
+    { title: 'Edit Checklist' },
+    { name: 'description', content: 'Edit Telegram Checklist' },
   ];
 };
-
-type CheckBoxLine =
-  | {
-      hasCheckBox: false;
-      isChecked?: false;
-      text: string;
-    }
-  | {
-      hasCheckBox: true;
-      isChecked: boolean;
-      text: string;
-    };
 
 export default function Index() {
   // TODO: localize
@@ -58,15 +48,10 @@ export default function Index() {
       text: 'The checklist is being loaded',
     });
 
-    const res = await fetch(`https://${window.ENV.WEB_APP_API_URL}/message`, {
-      body: JSON.stringify({
-        initData,
-        location,
-      }),
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const { ok, result, description } = await getChecklistMessage({
+      initData,
+      location,
     });
-    const { ok, result, description } = await res.json();
     if (!ok) {
       setStatus({
         code: 'error',
@@ -117,16 +102,11 @@ export default function Index() {
     });
 
     // updates the checklist message to store the data on telegram
-    const res = await fetch('https://check.rayzdev.me/api/update-message', {
-      body: JSON.stringify({
-        initData: webApp?.initData,
-        location,
-        checklistLines: newLines,
-      }),
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const { ok, description } = await updateChecklistMessage({
+      initData: webApp?.initData ?? '',
+      location,
+      checklistLines: newLines,
     });
-    const { ok, description } = await res.json();
     if (!ok) {
       setStatus({
         code: 'error',
