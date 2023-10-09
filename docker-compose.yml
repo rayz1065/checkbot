@@ -7,7 +7,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "${POSTGRES_PORT_EXTERNAL}:5432"
+      - '${POSTGRES_PORT_EXTERNAL}:5432'
     restart: unless-stopped
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -26,6 +26,14 @@ services:
     command: npm start
     depends_on:
       - postgres
+
+  web:
+    build:
+      context: ./web
+      dockerfile: ../docker/web.dockerfile
+    command: yarn dev
+    volumes:
+      - /usr/src/app/node_modules
 
 volumes:
   pgdata:
