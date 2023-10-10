@@ -1,4 +1,4 @@
-import { CheckBoxLine } from '../types/checklist';
+import { CheckBoxLine } from '../services/checklist-extractor';
 import { Box, Checkbox, Skeleton, Text } from '@mantine/core';
 
 interface Props {

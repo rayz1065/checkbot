@@ -8,7 +8,6 @@ import {
   ScrollArea,
   SimpleGrid,
   Text,
-  Textarea,
 } from '@mantine/core';
 import type { MetaFunction } from '@remix-run/node';
 import { useSearchParams } from '@remix-run/react';

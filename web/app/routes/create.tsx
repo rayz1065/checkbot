@@ -5,7 +5,7 @@ import {
   type MetaFunction,
   LoaderFunctionArgs,
 } from '@remix-run/node';
-import { useLoaderData, useSearchParams } from '@remix-run/react';
+import { useLoaderData } from '@remix-run/react';
 import { MainButton, useShowPopup } from '@vkruglikov/react-telegram-web-app';
 import { useEffect, useState } from 'react';
 import { ApiResult, createChecklistMessage } from '../services/api';
