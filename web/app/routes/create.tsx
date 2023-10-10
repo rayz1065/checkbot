@@ -11,12 +11,12 @@ import { useEffect, useState } from 'react';
 import { ApiResult, createChecklistMessage } from '../services/api';
 import Checklist from '../components/checklist';
 import Status, { StatusData } from '../components/status';
-import { CheckBoxLine } from '../types/checklist';
+import { CheckBoxLine } from '../services/checklist-extractor';
 
 export const meta: MetaFunction = () => {
   return [
-    { title: 'Edit Checklist' },
-    { name: 'description', content: 'Edit Telegram Checklist' },
+    { title: 'Create Checklist' },
+    { name: 'description', content: 'Create Telegram Checklist' },
   ];
 };
 
