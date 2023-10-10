@@ -1,382 +1,38 @@
 import { Api, Composer, GrammyError, InlineKeyboard } from 'grammy';
 import { MyContext } from '../main';
 import { TgError, escapeHtml, ik, makeId } from '../lib/utils';
-import {
-  Chat,
-  InlineQueryResultsButton,
-  Message,
-  UserFromGetMe,
-} from 'grammy/types';
-import crypto from 'crypto';
-import assert from 'assert';
+import { Chat, InlineQueryResultsButton, Message } from 'grammy/types';
 import {
   decodeDeepLinkParams,
   deepLinkUrl,
   encodeDeepLinkParams,
-  encodeDeepLinkUrl,
-  encodeStartAppUrl,
   startAppUrl,
 } from '../lib/deep-linking';
-import base from 'base-x';
 import { getEmptyConfig, setShowEditConfirmation } from './check-config';
-import { UserConfig } from '@prisma/client';
-const base62 = base(
-  '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
-);
-
-export type CheckBoxLine =
-  | {
-      hasCheckBox: false;
-      isChecked?: false;
-      text: string;
-    }
-  | {
-      hasCheckBox: true;
-      isChecked: boolean;
-      text: string;
-    };
-
-export interface ChecklistData {
-  hasCheckBoxes: boolean;
-  lines: CheckBoxLine[];
-  checkedBoxStyle: string;
-  uncheckedBoxStyle: string;
-}
-
-export interface ChecklistMessageLocation {
-  sourceChatId: number;
-  sourceMessageId: number;
-  salt: string;
-  foreignChatId?: number;
-  foreignMessageId?: number;
-  inlineMessageId?: string;
-  isPersonal?: boolean;
-}
-
-type LocationIdentifier =
-  | [
-      't',
-      'i' | 'j',
-      sourceChatId: string,
-      sourceMessageId: string,
-      inlineMessageId: string,
-      signature: string
-    ]
-  | [
-      't',
-      'f',
-      sourceChatId: string,
-      sourceMessageId: string,
-      foreignChatId: string,
-      foreignMessageId: string,
-      signature: string
-    ]
-  | [
-      't',
-      'c',
-      sourceChatId: string,
-      sourceMessageId: string,
-      signature: string
-    ];
-type LocationIdentifierAndIndex = [...LocationIdentifier, lineIdx: string];
+import {
+  ChecklistData,
+  extractCheckboxes,
+  getInlineQueryCheckBoxes,
+} from '../services/checklist-extractor';
+import {
+  ChecklistMessageLocation,
+  LocationIdentifierAndIndex,
+  UnsentChecklistLocation,
+  formatCheckBoxLines,
+  formatCheckBoxLinesNoHtml,
+  getChecklistMessageText,
+  getLocationIdentifier,
+  parseLocationIdentifier,
+  sendChecklist,
+  updateChecklistMessage,
+} from '../services/checklist-storage';
 
 export const checkListModule = new Composer<MyContext>();
 export const checkListChannelModule = new Composer<MyContext>();
 
-export const suggestedCheckedBoxes = ['✅', '☑️', '✔️'];
-export const suggestedUncheckedBoxes = ['- [ ]', '- [  ]', '- [   ]'];
-export const checkedBoxes = [...suggestedCheckedBoxes, '- [x]', '☑', '✔'];
-
-function escapeRegExp(text: string) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
-}
-
-function isLineChecked(line: string) {
-  const match = line.match(/^\s*(-?\s*\[\s*x\s*\])\s*/);
-  if (match) {
-    return {
-      matched: match[1],
-      normalized: '- [x]',
-    };
-  }
-
-  for (const box of checkedBoxes) {
-    if (line.trimStart().startsWith(box)) {
-      return {
-        matched: box,
-        normalized: box,
-      };
-    }
-  }
-  return null;
-}
-
-function isLineUnchecked(line: string) {
-  // if a match is found, it is normalized to make it have between 1 and 3 spaces
-  const match = line.match(/^\s*(-?\s*\[(\s*)\]|-)\s*/);
-  if (!match) {
-    return null;
-  }
-  const spacesCount = Math.max(1, Math.min(3, match[2]?.length ?? 0));
-  const normalized = '- [' + ' '.repeat(spacesCount) + ']';
-  return {
-    matched: match[1],
-    normalized,
-  };
-}
-
-export function extractCheckboxes(messageText: string) {
-  const lines = messageText.split('\n');
-  let hasCheckBoxes = false;
-  let checkedBoxStyle: string | null = null;
-  let uncheckedBoxStyle: string | null = null;
-  const resultingLines: CheckBoxLine[] = [];
-
-  for (const line of lines) {
-    const checkedBox = isLineChecked(line);
-    const uncheckedBox = isLineUnchecked(line);
-    if (!checkedBox && !uncheckedBox) {
-      resultingLines.push({
-        hasCheckBox: false,
-        text: line,
-      });
-      continue;
-    }
-
-    hasCheckBoxes = true;
-    let checkboxText = '';
-    const isChecked = checkedBox !== null;
-
-    if (isChecked) {
-      checkedBoxStyle = checkedBoxStyle ?? checkedBox.normalized;
-    } else {
-      uncheckedBoxStyle = uncheckedBoxStyle ?? uncheckedBox!.normalized;
-    }
-
-    const usedCheckBox = (isChecked ? checkedBox : uncheckedBox)!;
-    checkboxText = line.replace(
-      new RegExp(`^\\s*${escapeRegExp(usedCheckBox.matched)}\\s*`),
-      ''
-    );
-
-    resultingLines.push({
-      hasCheckBox: true,
-      isChecked: isChecked,
-      text: checkboxText,
-    });
-  }
-
-  return {
-    hasCheckBoxes,
-    lines: resultingLines,
-    checkedBoxStyle,
-    uncheckedBoxStyle,
-  };
-}
-
-export function configExtractCheckboxes(
-  messageText: string,
-  config: UserConfig | null
-): ChecklistData {
-  let { checkedBoxStyle, uncheckedBoxStyle, ...etc } =
-    extractCheckboxes(messageText);
-  const usedConfig = config ?? getEmptyConfig();
-  checkedBoxStyle ??= usedConfig.default_checked_box;
-  uncheckedBoxStyle ??= usedConfig.default_unchecked_box;
-
-  return { ...etc, checkedBoxStyle, uncheckedBoxStyle };
-}
-
-function formatCheckBoxLines(
-  checklistData: ChecklistData,
-  toggleUrl: (idx: number) => string
-) {
-  const { lines, checkedBoxStyle, uncheckedBoxStyle } = checklistData;
-  const resultingLines = lines.map((line, idx) => {
-    if (!line.hasCheckBox) {
-      return escapeHtml(line.text);
-    }
-    const checkBoxStyle = line.isChecked ? checkedBoxStyle : uncheckedBoxStyle;
-    const itemText = line.isChecked
-      ? `<s>${escapeHtml(line.text)}</s>`
-      : escapeHtml(line.text);
-    // Space is in URL to make it simpler to click
-    return `<a href="${toggleUrl(idx)}">${checkBoxStyle} </a>${itemText}`;
-  });
-
-  return resultingLines.join('\n');
-}
-
-function formatCheckBoxLinesNoHtml(checklistData: ChecklistData) {
-  const { lines, checkedBoxStyle, uncheckedBoxStyle } = checklistData;
-  const resultingLines = lines.map((line) => {
-    if (!line.hasCheckBox) {
-      return line.text;
-    }
-    const checkBoxStyle = line.isChecked ? checkedBoxStyle : uncheckedBoxStyle;
-    const itemText = line.text;
-    return `${checkBoxStyle} ${itemText}`;
-  });
-  return resultingLines.join('\n');
-}
-
-function getLocationIdentifier(
-  location: ChecklistMessageLocation
-): LocationIdentifier {
-  const {
-    sourceChatId,
-    sourceMessageId,
-    inlineMessageId,
-    foreignChatId,
-    foreignMessageId,
-    isPersonal,
-  } = location;
-
-  if (inlineMessageId) {
-    return [
-      't',
-      isPersonal ? 'j' : 'i',
-      sourceChatId.toString(36),
-      sourceMessageId.toString(36),
-      inlineMessageId,
-      computeLocationSignature(location),
-    ];
-  }
-
-  if (foreignChatId && foreignMessageId) {
-    return [
-      't',
-      'f',
-      sourceChatId.toString(36),
-      sourceMessageId.toString(36),
-      foreignChatId.toString(36),
-      foreignMessageId.toString(36),
-      computeLocationSignature(location),
-    ];
-  }
-
-  return [
-    't',
-    'c',
-    sourceChatId.toString(36),
-    sourceMessageId.toString(36),
-    computeLocationSignature(location),
-  ];
-}
-
-function checklistUrl(me: UserFromGetMe, location: ChecklistMessageLocation) {
-  const locationIdentifier = getLocationIdentifier(location);
-  return (idx: number) =>
-    encodeDeepLinkUrl(me, [...locationIdentifier, idx.toString(36)]);
-}
-
-function computeLocationSignature(location: ChecklistMessageLocation) {
-  // make sure the same stringified version is always consistent
-  const stringifiedLocation = JSON.stringify([
-    location.sourceChatId,
-    location.inlineMessageId,
-    location.inlineMessageId,
-    location.foreignChatId,
-    location.foreignMessageId,
-    location.salt,
-  ]);
-
-  assert(process.env.CHECKBOX_HMAC_SECRET);
-
-  const hashResult = crypto
-    .createHmac('sha256', process.env.CHECKBOX_HMAC_SECRET)
-    .update(stringifiedLocation)
-    .digest();
-  const hashedLocation = base62.encode(hashResult);
-
-  return `${location.salt}${hashedLocation.substring(0, 12)}`;
-}
-
-export function parseLocationIdentifier(splits: string[]) {
-  const location: ChecklistMessageLocation = {
-    sourceChatId: NaN,
-    sourceMessageId: NaN,
-    salt: '',
-  };
-  let signature: string;
-
-  if (splits.length >= 5 && splits[1] === 'c') {
-    location.sourceChatId = parseInt(splits[2], 36);
-    location.sourceMessageId = parseInt(splits[3], 36);
-    signature = splits[4];
-  } else if (splits.length >= 6 && ['i', 'j'].indexOf(splits[1]) !== -1) {
-    location.isPersonal = splits[1] === 'j';
-    location.sourceChatId = parseInt(splits[2], 36);
-    location.sourceMessageId = parseInt(splits[3], 36);
-    location.inlineMessageId = splits[4];
-    signature = splits[5];
-  } else if (splits.length >= 7 && splits[1] === 'f') {
-    location.sourceChatId = parseInt(splits[2], 36);
-    location.sourceMessageId = parseInt(splits[3], 36);
-    location.foreignChatId = parseInt(splits[4], 36);
-    location.foreignMessageId = parseInt(splits[5], 36);
-    signature = splits[6];
-  } else {
-    throw new Error('Failed to parse command');
-  }
-
-  location.salt = signature.substring(0, 3);
-
-  if (
-    isNaN(location.sourceChatId) ||
-    isNaN(location.sourceMessageId) ||
-    Number.isNaN(location.foreignChatId) ||
-    Number.isNaN(location.foreignMessageId) ||
-    computeLocationSignature(location) !== signature
-  ) {
-    throw new Error('Failed to parse command');
-  }
-
-  return location;
-}
-
-/**
- * Used in private chats, groups, and inline mode
- */
-export async function sendChecklist(
-  api: Api,
-  me: UserFromGetMe,
-  location: Omit<ChecklistMessageLocation, 'sourceMessageId'>,
-  checklistData: ChecklistData
-) {
-  const normalizedText = formatCheckBoxLines(
-    checklistData,
-    () => '' // no URL is available yet
-  );
-  const { sourceChatId, foreignChatId } = location;
-  const checklistMessage = await api.sendMessage(sourceChatId, normalizedText, {
-    disable_web_page_preview: true,
-  });
-  const sourceMessageId = checklistMessage.message_id;
-  const completeLocation: ChecklistMessageLocation = {
-    ...location,
-    sourceMessageId,
-  };
-
-  if (foreignChatId) {
-    // get a foreignMessageId
-    const foreignChecklistMessage = await api.sendMessage(
-      foreignChatId,
-      normalizedText,
-      { disable_web_page_preview: true }
-    );
-    completeLocation.foreignMessageId = foreignChecklistMessage.message_id;
-  }
-
-  // edit the message now that the URL is available
-  await updateChecklistMessage(api, me, completeLocation, checklistData);
-
-  return { completeLocation, checklistData };
-}
-
 function createChecklistAppButton(
   ctx: MyContext,
-  location: Omit<ChecklistMessageLocation, 'sourceMessageId'>,
+  location: UnsentChecklistLocation,
   checklistData: ChecklistData
 ) {
   const appData = JSON.stringify({
@@ -403,6 +59,11 @@ function createChecklistAppButton(
   );
 }
 
+/**
+ * Replies to a command or a pm message containing a checklist
+ * with the generated checklist, internally uses sendChecklist
+ * but contains extra logic related to user interaction
+ */
 const replyWithChecklist = async (
   ctx: MyContext & { message: Message } & { chat: Chat },
   checklistText: string
@@ -411,7 +72,7 @@ const replyWithChecklist = async (
     // this should have been responded to in 'chosen inline result'
     return;
   }
-  const location: Omit<ChecklistMessageLocation, 'sourceMessageId'> = {
+  const location: UnsentChecklistLocation = {
     sourceChatId: ctx.chat.id,
     salt: makeId(3),
   };
@@ -426,10 +87,7 @@ const replyWithChecklist = async (
     location.sourceChatId = ctx.message.from.id;
   }
 
-  const checklistData = configExtractCheckboxes(
-    checklistText,
-    ctx.dbUser.config
-  );
+  const checklistData = extractCheckboxes(checklistText, ctx.dbUser.config);
   try {
     await sendChecklist(ctx.api, ctx.me, location, checklistData);
   } catch (error) {
@@ -479,8 +137,7 @@ checkListModule
   .filter(
     // Only handle this message if it has checkboxes
     (ctx) =>
-      configExtractCheckboxes(ctx.message.text, ctx.dbUser.config)
-        .hasCheckBoxes,
+      extractCheckboxes(ctx.message.text, ctx.dbUser.config).hasCheckBoxes,
     (ctx) => replyWithChecklist(ctx, ctx.message.text)
   );
 
@@ -495,39 +152,18 @@ checkListChannelModule
         return;
       }
 
-      const checklistData = configExtractCheckboxes(
-        ctx.msg.text,
-        ctx.dbUser.config
-      );
+      const checklistData = extractCheckboxes(ctx.msg.text, ctx.dbUser.config);
       const location: ChecklistMessageLocation = {
         sourceChatId: ctx.msg.chat.id,
         sourceMessageId: ctx.msg.message_id,
         salt: 'CHA',
       };
-      const checklistText = formatCheckBoxLines(
-        checklistData,
-        checklistUrl(ctx.me, location)
-      );
 
-      await ctx.api.editMessageText(
-        location.sourceChatId,
-        location.sourceMessageId,
-        checklistText,
-        { disable_web_page_preview: true }
-      );
+      await updateChecklistMessage(ctx.api, ctx.me, location, checklistData);
     }
   );
 
-function getInlineQueryCheckBoxes(ctx: MyContext) {
-  // replaces lines which are not checkboxes with an unchecked line
-  const text = (ctx.inlineQuery ?? ctx.chosenInlineResult)!.query;
-  const items = text
-    .split('\n')
-    .filter((x) => x.length > 0)
-    .map((x) => (isLineChecked(x) || isLineUnchecked(x) ? x : `- [ ] ${x}`));
-  return configExtractCheckboxes(items.join('\n'), ctx.dbUser.config);
-}
-
+// inline query containing a checklist
 checkListModule.inlineQuery(/^.+/, async (ctx) => {
   let inlineButton: InlineQueryResultsButton | undefined = undefined;
   if (ctx.inlineQuery.query.length >= 250) {
@@ -536,7 +172,10 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
       text: 'Warning, inline query is too long!',
     };
   }
-  const checklistData = getInlineQueryCheckBoxes(ctx);
+  const checklistData = getInlineQueryCheckBoxes(
+    ctx.inlineQuery.query,
+    ctx.dbUser.config
+  );
 
   const keyboard = [
     [
@@ -585,7 +224,10 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
 checkListModule.on('chosen_inline_result').filter(
   (ctx) => ctx.chosenInlineResult.result_id.startsWith('checklist'),
   async (ctx) => {
-    const checklistData = getInlineQueryCheckBoxes(ctx);
+    const checklistData = getInlineQueryCheckBoxes(
+      ctx.chosenInlineResult.query,
+      ctx.dbUser.config
+    );
     const inlineMessageId = ctx.chosenInlineResult.inline_message_id;
     if (!inlineMessageId) {
       return console.error('Failed to get inline message id', ctx);
@@ -618,6 +260,11 @@ checkListModule.on('chosen_inline_result').filter(
   }
 );
 
+/**
+ * Checks the permissions of a user to access a checklist
+ * Note: since the location is always parsed from a `LocationIdentifier`
+ * is is assumed that the signature test already passed here
+ */
 export async function checkChecklistPermissions(
   api: Api,
   telegramUserId: number,
@@ -663,47 +310,6 @@ export async function checkChecklistPermissions(
   }
 }
 
-/**
- * Reads a checklist message and returns the checklist data
- *
- * @throws TgError
- */
-export async function getChecklistMessageText(
-  api: Api,
-  temporaryChatId: number,
-  location: ChecklistMessageLocation
-) {
-  let checklistMessage: Message;
-
-  try {
-    const { sourceChatId, sourceMessageId } = location;
-    checklistMessage = await api.forwardMessage(
-      temporaryChatId,
-      sourceChatId,
-      sourceMessageId,
-      { disable_notification: true }
-    );
-  } catch (error) {
-    if (error instanceof GrammyError) {
-      throw new TgError('failed-to-read-checklist-error', {
-        message: error.message,
-      });
-    }
-    console.error('Failed to read checklist', error);
-    throw new TgError('failed-to-read-checklist-unknown');
-  }
-
-  if (!checklistMessage.text) {
-    throw new TgError('failed-to-read-checklist');
-  }
-
-  api.deleteMessage(temporaryChatId, checklistMessage.message_id).catch(() => {
-    // An error here is ignored
-  });
-
-  return checklistMessage.text ?? checklistMessage.caption ?? '';
-}
-
 // update a checklist
 checkListModule
   .on('message')
@@ -744,7 +350,7 @@ checkListModule
       // Get contents of the checklist
       let checklistData: ChecklistData;
       try {
-        checklistData = configExtractCheckboxes(
+        checklistData = extractCheckboxes(
           await getChecklistMessageText(ctx.api, ctx.chat.id, location),
           ctx.dbUser.config
         );
@@ -795,97 +401,3 @@ checkListModule
       }
     }
   );
-
-export async function updateChecklistMessage(
-  api: Api,
-  me: UserFromGetMe,
-  location: ChecklistMessageLocation,
-  checklistData: ChecklistData
-) {
-  const {
-    inlineMessageId,
-    foreignChatId,
-    foreignMessageId,
-    sourceChatId,
-    sourceMessageId,
-  } = location;
-  const urlGenerator = checklistUrl(me, location);
-  const checklistText = formatCheckBoxLines(checklistData, urlGenerator);
-
-  api
-    .editMessageText(sourceChatId, sourceMessageId, checklistText, {
-      disable_web_page_preview: true,
-      parse_mode: 'HTML',
-      ...ik([
-        sourceChatId > 0
-          ? [
-              InlineKeyboard.webApp(
-                '✏️',
-                `https://${
-                  process.env.WEB_APP_URL
-                }/?tgWebAppStartParam=${encodeDeepLinkParams(
-                  getLocationIdentifier(location)
-                )}&list=${encodeURIComponent(JSON.stringify(checklistData))}`
-              ),
-            ]
-          : [
-              InlineKeyboard.url(
-                '✏️',
-                encodeStartAppUrl(
-                  me,
-                  'edit_checklist',
-                  getLocationIdentifier(location)
-                )
-              ),
-            ],
-      ]),
-    })
-    .catch(() => {
-      // may fail if the message has been deleted
-    });
-
-  // update the inline message if available
-  if (inlineMessageId !== undefined) {
-    api
-      .editMessageTextInline(inlineMessageId, checklistText, {
-        disable_web_page_preview: true,
-        parse_mode: 'HTML',
-        ...ik([
-          [
-            InlineKeyboard.url(
-              '✏️',
-              encodeStartAppUrl(
-                me,
-                'edit_checklist',
-                getLocationIdentifier(location)
-              )
-            ),
-          ],
-        ]),
-      })
-      .catch(() => {
-        // May fail if the message has been deleted
-      });
-  } else if (foreignChatId && foreignMessageId !== undefined) {
-    api
-      .editMessageText(foreignChatId, foreignMessageId, checklistText, {
-        disable_web_page_preview: true,
-        parse_mode: 'HTML',
-        ...ik([
-          [
-            InlineKeyboard.url(
-              '✏️',
-              encodeStartAppUrl(
-                me,
-                'edit_checklist',
-                getLocationIdentifier(location)
-              )
-            ),
-          ],
-        ]),
-      })
-      .catch(() => {
-        // May fail if the message has been deleted
-      });
-  }
-}

@@ -7,16 +7,7 @@ import express, {
 } from 'express';
 import crypto from 'crypto';
 import querystring from 'node:querystring';
-import {
-  CheckBoxLine,
-  ChecklistData,
-  checkChecklistPermissions,
-  configExtractCheckboxes,
-  getChecklistMessageText,
-  parseLocationIdentifier,
-  sendChecklist,
-  updateChecklistMessage,
-} from '../modules/checklist';
+import { checkChecklistPermissions } from '../modules/checklist';
 import { Api } from 'grammy';
 import { decodeDeepLinkParams } from '../lib/deep-linking';
 import { body, validationResult } from 'express-validator';
@@ -25,6 +16,17 @@ import { i18n } from '../main';
 import { TgError } from '../lib/utils';
 import { getEmptyConfig } from '../modules/check-config';
 import { UserConfig } from '@prisma/client';
+import {
+  CheckBoxLine,
+  ChecklistData,
+  extractCheckboxes,
+} from '../services/checklist-extractor';
+import {
+  getChecklistMessageText,
+  parseLocationIdentifier,
+  sendChecklist,
+  updateChecklistMessage,
+} from '../services/checklist-storage';
 
 export const server = express();
 server.use(json());
@@ -123,7 +125,7 @@ router.post(
     let checklistData: ChecklistData;
     try {
       await checkChecklistPermissions(api, initData.user!.id, location);
-      checklistData = configExtractCheckboxes(
+      checklistData = extractCheckboxes(
         await getChecklistMessageText(api, initData.user!.id, location),
         req.body.dbUser.config
       );

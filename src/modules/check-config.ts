@@ -6,9 +6,12 @@ import {
   selectedBtnText,
   tgCallbackMiddleware,
 } from '../lib/utils';
-import { suggestedCheckedBoxes, suggestedUncheckedBoxes } from './checklist';
 import { UserConfig } from '@prisma/client';
 import { mainMenuCb } from './main-menu';
+import {
+  suggestedCheckedBoxes,
+  suggestedUncheckedBoxes,
+} from '../services/checklist-extractor';
 
 export const checkConfigModule = new Composer<MyContext>();
 
@@ -20,7 +23,7 @@ export const botLanguages = [
 export function getEmptyConfig(): Omit<Omit<UserConfig, 'user_id'>, 'id'> {
   return {
     default_checked_box: suggestedCheckedBoxes[0],
-    default_unchecked_box: '- [ ]',
+    default_unchecked_box: suggestedUncheckedBoxes[0],
     show_edit_confirmation: true,
   };
 }
