@@ -12,8 +12,8 @@ It does _not_ work for anonymous admins in groups with protected content.
 
 ## How it works
 
-Instead of storing the checklist in the database, every time a checklist is edited by pressing a box, the message of the checklist is forwarded to the user's chat such that the bot can read it.
-Before allowing the user to update a checklist a series of verifications are done, controlling the authenticity of the request through a hash stored in the URL and the permissions through the Telegram bot API.
+The checklist is not stored in the database, instead, every time a checklist is edited, the bot forwards the message containing it to the user's chat in order to read it.
+Before allowing the user to update a checklist a series of verification steps is performed, controlling the authenticity of the request through a hash stored in the URL and the permissions through the Telegram bot API.
 
 There are a couple of workarounds to make all of the settings indicated above work, like using the private chat of the user to store a checklist in a group with protected content.
 
@@ -26,8 +26,9 @@ The `src` directory contains the code for the bot server:
 - The api, required by the webapp to interface with the bot's logic, written using the [ExpressJs](https://expressjs.com/) framework
 
 The `web` directory contains the webapp, which can be used to more quickly edit checklists in any chat. It is built in [Remix](https://remix.run/), a web framework based on react.
+It uses [Mantine](https://mantine.dev/) as the components library.
 
-The database, which is used to store basic user data, such as the configs, uses [postgres](https://www.postgresql.org/) and is managed through [prisma](https://www.prisma.io/).
+The database, which is used to store basic user data such as the configs, uses [postgres](https://www.postgresql.org/) and is managed through [prisma](https://www.prisma.io/).
 
 A suggested method for deployment is present in `docker-compose.prod.yml`, which shows how [traefik](https://traefik.io/) can be used as a reverse proxy for the various services.
 
@@ -70,6 +71,11 @@ Finally you will need to run the database migrations:
 ```sh
 docker compose exec app npx prisma db push
 ```
+
+## Translating
+
+Translating is done in the [fluent](https://projectfluent.org/) language, create or edit a file under `src/i18n`, the language will be immediately available to users who have set it in the Telegram client.
+If you want to add it to the available configurations edit `src/modules/check-config.ts` and add it to `botLanguages`.
 
 ## License
 
