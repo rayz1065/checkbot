@@ -141,6 +141,7 @@ export default function Index() {
    */
   useEffect(() => {
     if (!editAsText) {
+      webApp?.disableClosingConfirmation();
       return;
     }
 
