@@ -61,13 +61,15 @@ export default function Index() {
     'ok' | 'error' | 'loading'
   >('ok');
   const [editAsText, setEditAsText] = useState(false);
-  const [checklistTextValue, setChecklistTextValue] = useState('');
-  const [storedChecklistTextValue] = useDebouncedValue(
+  const [checklistTextValue, setChecklistTextValue] = useState(
+    formatCheckBoxLines(checklistLines)
+  );
+  const [debouncedChecklistTextValue, cancelTextUpdate] = useDebouncedValue(
     checklistTextValue,
     1000
   );
 
-  async function fetchMessage(initData: string) {
+  async function fetchMessage(webApp: WebApp) {
     // loads the checklist from telegram through the api
     setStatus({
       code: 'loading',
@@ -75,7 +77,7 @@ export default function Index() {
     });
 
     const { ok, result, description } = await getChecklistMessage({
-      initData,
+      initData: webApp.initData,
       location,
     });
     if (!ok) {
@@ -92,6 +94,10 @@ export default function Index() {
     });
     setChecklistLines(result);
     setChecklistTextValue(formatCheckBoxLines(result));
+    cancelTextUpdate();
+    webApp.CloudStorage.getItem('edit-mode', (error, value) => {
+      setEditAsText(value === 'text');
+    });
   }
 
   function requestWriteAccessAndFetchMessage(webApp: WebApp) {
@@ -101,7 +107,7 @@ export default function Index() {
     webApp.requestWriteAccess((success) => {
       if (success) {
         setContactStatus('ok');
-        fetchMessage(webApp.initData);
+        fetchMessage(webApp);
       } else {
         setContactStatus('error');
         setStatus({
@@ -119,12 +125,13 @@ export default function Index() {
     if (webApp === null && window.Telegram.WebApp) {
       const webApp = window.Telegram.WebApp;
       setWebApp(webApp);
-      webApp.CloudStorage.getItem('edit-mode', (error, value) => {
-        setEditAsText(value === 'text');
-      });
       if (checklistLines.length === 0) {
         // lines were not passed from the url, they must be fetched from the api
         requestWriteAccessAndFetchMessage(webApp);
+      } else {
+        webApp.CloudStorage.getItem('edit-mode', (error, value) => {
+          setEditAsText(value === 'text');
+        });
       }
     }
   });
@@ -133,22 +140,23 @@ export default function Index() {
    * Edit as text mode requires custom logic for saving the checklist
    */
   useEffect(() => {
-    if (checklistTextValue !== storedChecklistTextValue) {
+    if (!editAsText) {
+      return;
+    }
+
+    if (checklistTextValue !== debouncedChecklistTextValue) {
       webApp?.enableClosingConfirmation();
       setStatus({
         code: 'loading',
         text: 'Waiting for you to finish typing',
       });
     } else {
+      // once the value is debounced, store it
+      const checklist = extractCheckboxes(checklistTextValue);
+      updateChecklistLines(checklist.lines);
       webApp?.disableClosingConfirmation();
     }
-  }, [checklistTextValue, storedChecklistTextValue]);
-
-  useEffect(() => {
-    // once the value is debounced, store it
-    const checklist = extractCheckboxes(checklistTextValue);
-    updateChecklistLines(checklist.lines);
-  }, [storedChecklistTextValue]);
+  }, [checklistTextValue, debouncedChecklistTextValue, editAsText]);
 
   async function updateChecklistLines(newLines: CheckBoxLine[]) {
     setChecklistLines(newLines);
@@ -215,6 +223,7 @@ export default function Index() {
             webApp?.CloudStorage.setItem('edit-mode', 'list');
           } else {
             setChecklistTextValue(formatCheckBoxLines(checklistLines));
+            cancelTextUpdate();
             setEditAsText(true);
             webApp?.CloudStorage.setItem('edit-mode', 'text');
           }
@@ -232,10 +241,10 @@ export default function Index() {
       line.hasCheckBox ? { ...line, isChecked: checked } : line
     );
 
+    updateChecklistLines(newLines);
     if (editAsText) {
       setChecklistTextValue(formatCheckBoxLines(newLines));
-    } else {
-      updateChecklistLines(newLines);
+      cancelTextUpdate();
     }
   }
 
