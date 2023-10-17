@@ -152,7 +152,7 @@ checkListChannelModule
         return;
       }
 
-      const checklistData = extractCheckboxes(ctx.msg.text, ctx.dbUser.config);
+      const checklistData = extractCheckboxes(ctx.msg.text, null);
       const location: ChecklistMessageLocation = {
         sourceChatId: ctx.msg.chat.id,
         sourceMessageId: ctx.msg.message_id,
