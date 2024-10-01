@@ -10,6 +10,11 @@ import {
 import { Api, GrammyError, InlineKeyboard } from 'grammy';
 import { ChecklistData } from './checklist-extractor';
 import { TgError, escapeHtml, ik } from '../lib/utils';
+import {
+  packInlineMessageId,
+  unpackInlineMessageId,
+} from './inline-message-id-unpacker';
+import { base62DecodeNumber, base62EncodeNumber } from '../lib/base-62-numbers';
 
 const base62 = base(
   '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -46,6 +51,17 @@ export type LocationIdentifier =
       sourceChatId: string,
       sourceMessageId: string,
       inlineMessageId: string,
+      signature: string
+    ]
+  | [
+      // inline message from a user with a 64-bit id
+      't',
+      'I' | 'J',
+      sourceChatId: string,
+      sourceMessageId: string,
+      dcId: string,
+      id: string,
+      accessHash: string,
       signature: string
     ]
   | [
@@ -120,6 +136,19 @@ export function getLocationIdentifier(
   } = location;
 
   if (inlineMessageId) {
+    const unpacked = unpackInlineMessageId(inlineMessageId);
+    if (unpacked && 'owner_id' in unpacked) {
+      return [
+        't',
+        isPersonal ? 'J' : 'I',
+        sourceChatId.toString(36),
+        sourceMessageId.toString(36),
+        unpacked.dc_id.toString(36),
+        unpacked.id.toString(36),
+        base62EncodeNumber(unpacked.access_hash),
+        computeLocationSignature(location),
+      ];
+    }
     return [
       't',
       isPersonal ? 'j' : 'i',
@@ -174,6 +203,26 @@ export function parseLocationIdentifier(splits: string[]) {
     location.sourceMessageId = parseInt(splits[3], 36);
     location.inlineMessageId = splits[4];
     signature = splits[5];
+  } else if (splits.length >= 7 && ['I', 'J'].indexOf(splits[1]) !== -1) {
+    location.isPersonal = splits[1] === 'J';
+    location.sourceChatId = parseInt(splits[2], 36);
+    location.sourceMessageId = parseInt(splits[3], 36);
+    const dcId = parseInt(splits[4], 36);
+    const id = parseInt(splits[5], 36);
+    const ownerId = BigInt(location.sourceChatId);
+    const accessHash = base62DecodeNumber(splits[6]);
+
+    if (isNaN(dcId) || isNaN(id)) {
+      throw new TypeError('Failed to parse command');
+    }
+    location.inlineMessageId = packInlineMessageId({
+      _: 'inputBotInlineMessageID64',
+      access_hash: accessHash,
+      dc_id: dcId,
+      id,
+      owner_id: ownerId,
+    });
+    signature = splits[7];
   } else if (splits.length >= 7 && splits[1] === 'f') {
     location.sourceChatId = parseInt(splits[2], 36);
     location.sourceMessageId = parseInt(splits[3], 36);
