@@ -69,7 +69,7 @@ You can use that utility script to update most configurations automatically for 
 Finally you will need to run the database migrations:
 
 ```sh
-docker compose exec app npx prisma db push
+docker compose exec app npx prisma migrate deploy
 ```
 
 ## Translating
