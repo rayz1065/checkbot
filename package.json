@@ -9,6 +9,7 @@
     "@grammyjs/i18n": "^1.0.1",
     "@grammyjs/parse-mode": "^1.8.1",
     "@grammyjs/storage-prisma": "^2.3.0",
+    "@mtkruto/node": "^0.3.0",
     "@prisma/client": "^5.1.1",
     "base-x": "^4.0.0",
     "commander": "^11.0.0",
