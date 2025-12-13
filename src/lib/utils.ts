@@ -2,11 +2,11 @@ import { Filter, Middleware } from 'grammy';
 import {
   InlineKeyboardButton,
   InlineKeyboardMarkup,
+  LinkPreviewOptions,
   Message,
 } from 'grammy/types';
 import { emoji } from 'node-emoji';
 import { MyContext, MyConversation } from '../main';
-import { TranslationContext } from '@grammyjs/i18n/types/src/deps';
 
 export interface TgMessageData {
   text: string;
@@ -127,11 +127,11 @@ export function tgCallbackMiddleware(callbacks: TgCallback<any>[]) {
  * An error to be displayed to the user
  */
 export class TgError extends Error {
-  public context?: TranslationContext;
+  public context?: Record<string, number | string>;
 
   public constructor(
     message: string,
-    context?: TranslationContext | undefined
+    context?: Record<string, number | string> | undefined
   ) {
     super(message);
     this.context = context;
@@ -245,4 +245,10 @@ export async function tgValidate(
       await conversation.skip({ drop: true });
     }
   }
+}
+
+export function disableWebPagePreview() {
+  return {
+    link_preview_options: { is_disabled: true } satisfies LinkPreviewOptions,
+  };
 }

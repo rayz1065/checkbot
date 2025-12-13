@@ -1,6 +1,12 @@
 import { Api, Composer, GrammyError, InlineKeyboard } from 'grammy';
 import { MyContext } from '../main';
-import { TgError, escapeHtml, ik, makeId } from '../lib/utils';
+import {
+  TgError,
+  disableWebPagePreview,
+  escapeHtml,
+  ik,
+  makeId,
+} from '../lib/utils';
 import { Chat, InlineQueryResultsButton, Message } from 'grammy/types';
 import {
   decodeDeepLinkParams,
@@ -194,7 +200,7 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
         input_message_content: {
           message_text: formatCheckBoxLines(checklistData, () => ''),
           parse_mode: 'HTML',
-          disable_web_page_preview: true,
+          ...disableWebPagePreview(),
         },
         ...ik(keyboard),
         title: ctx.t('shared-checklist'),
@@ -206,7 +212,7 @@ checkListModule.inlineQuery(/^.+/, async (ctx) => {
         input_message_content: {
           message_text: formatCheckBoxLines(checklistData, () => ''),
           parse_mode: 'HTML',
-          disable_web_page_preview: true,
+          ...disableWebPagePreview(),
         },
         ...ik(keyboard),
         title: ctx.t('personal-checklist'),

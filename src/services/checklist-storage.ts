@@ -9,7 +9,7 @@ import {
 } from '../lib/deep-linking';
 import { Api, GrammyError, InlineKeyboard } from 'grammy';
 import { ChecklistData } from './checklist-extractor';
-import { TgError, escapeHtml, ik } from '../lib/utils';
+import { TgError, disableWebPagePreview, escapeHtml, ik } from '../lib/utils';
 import {
   packInlineMessageId,
   unpackInlineMessageId,
@@ -303,9 +303,11 @@ export async function sendChecklist(
     () => '' // no URL is available yet
   );
   const { sourceChatId, foreignChatId } = location;
-  const checklistMessage = await api.sendMessage(sourceChatId, normalizedText, {
-    disable_web_page_preview: true,
-  });
+  const checklistMessage = await api.sendMessage(
+    sourceChatId,
+    normalizedText,
+    disableWebPagePreview()
+  );
   const sourceMessageId = checklistMessage.message_id;
   const completeLocation: ChecklistMessageLocation = {
     ...location,
@@ -317,7 +319,7 @@ export async function sendChecklist(
     const foreignChecklistMessage = await api.sendMessage(
       foreignChatId,
       normalizedText,
-      { disable_web_page_preview: true }
+      disableWebPagePreview()
     );
     completeLocation.foreignMessageId = foreignChecklistMessage.message_id;
   }
@@ -362,7 +364,7 @@ export async function updateChecklistMessage(
 
   api
     .editMessageText(sourceChatId, sourceMessageId, checklistText, {
-      disable_web_page_preview: true,
+      ...disableWebPagePreview(),
       parse_mode: 'HTML',
       ...ik([
         [
@@ -379,7 +381,7 @@ export async function updateChecklistMessage(
   if (inlineMessageId !== undefined) {
     api
       .editMessageTextInline(inlineMessageId, checklistText, {
-        disable_web_page_preview: true,
+        ...disableWebPagePreview(),
         parse_mode: 'HTML',
         ...ik([[startAppUrlButton]]),
       })
@@ -389,7 +391,7 @@ export async function updateChecklistMessage(
   } else if (foreignChatId && foreignMessageId !== undefined) {
     api
       .editMessageText(foreignChatId, foreignMessageId, checklistText, {
-        disable_web_page_preview: true,
+        ...disableWebPagePreview(),
         parse_mode: 'HTML',
         ...ik([[startAppUrlButton]]),
       })
