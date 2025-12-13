@@ -33,6 +33,7 @@ export interface ChecklistMessageLocation {
   foreignMessageId?: number;
   inlineMessageId?: string;
   isPersonal?: boolean;
+  messageThreadId?: number;
 }
 
 export type UnsentChecklistLocation = Omit<
@@ -303,11 +304,10 @@ export async function sendChecklist(
     () => '' // no URL is available yet
   );
   const { sourceChatId, foreignChatId } = location;
-  const checklistMessage = await api.sendMessage(
-    sourceChatId,
-    normalizedText,
-    disableWebPagePreview()
-  );
+  const checklistMessage = await api.sendMessage(sourceChatId, normalizedText, {
+    ...disableWebPagePreview(),
+    message_thread_id: location.messageThreadId,
+  });
   const sourceMessageId = checklistMessage.message_id;
   const completeLocation: ChecklistMessageLocation = {
     ...location,

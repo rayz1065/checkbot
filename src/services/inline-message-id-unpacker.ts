@@ -64,5 +64,5 @@ export function unpackInlineMessageId(id: string): UnpackedData | false {
 export function packInlineMessageId(data: UnpackedData) {
   const writer = new TLWriter();
   writer.writeObject(data);
-  return base64EncodeUrlSafe(writer.buffer.slice(4));
+  return base64EncodeUrlSafe(writer.buffer.slice(4) as any);
 }

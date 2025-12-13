@@ -92,6 +92,9 @@ const replyWithChecklist = async (
     location.foreignChatId = ctx.chat.id;
     location.sourceChatId = ctx.message.from.id;
   }
+  if (ctx.message.message_thread_id && ctx.message.is_topic_message) {
+    location.messageThreadId = ctx.message.message_thread_id;
+  }
 
   const checklistData = extractCheckboxes(checklistText, ctx.dbUser.config);
   try {
