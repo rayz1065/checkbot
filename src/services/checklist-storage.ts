@@ -355,9 +355,7 @@ export async function updateChecklistMessage(
   );
   const webappButton = InlineKeyboard.webApp(
     '✏️',
-    `https://${
-      process.env.WEB_APP_URL
-    }/?tgWebAppStartParam=${encodeDeepLinkParams(
+    `${process.env.WEB_APP_URL}/?tgWebAppStartParam=${encodeDeepLinkParams(
       getLocationIdentifier(location)
     )}&list=${encodeURIComponent(JSON.stringify(checklistData))}`
   );

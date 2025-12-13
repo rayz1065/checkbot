@@ -1,4 +1,4 @@
-import { CheckBoxLine } from '../types/checklist';
+import { CheckBoxLine } from './checklist-extractor';
 
 export type ApiResult<T> =
   | {
@@ -20,14 +20,11 @@ async function apiPost<T = unknown>(
   apiSuffix: string,
   body: Record<string, any>
 ): Promise<ApiResult<T>> {
-  const result = await fetch(
-    `https://${window.ENV.WEB_APP_API_URL}/${apiSuffix}`,
-    {
-      body: JSON.stringify(body),
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    }
-  );
+  const result = await fetch(`${window.ENV.WEB_APP_API_URL}/${apiSuffix}`, {
+    body: JSON.stringify(body),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
 
   try {
     const jsonValue = result.json();
